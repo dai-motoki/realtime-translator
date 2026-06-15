@@ -148,6 +148,27 @@ export default function Translator() {
       </main>
 
       <footer className="controls">
+        <div className="options">
+          <button
+            className={`audio-toggle ${t.audioOn ? "on" : ""}`}
+            onClick={() => t.setAudioOn(!t.audioOn)}
+            aria-pressed={t.audioOn}
+          >
+            <span className="audio-ico">{t.audioOn ? "🔊" : "🔇"}</span>
+            音声出力 {t.audioOn ? "ON" : "OFF"}
+          </button>
+          {t.segments.length > 0 && (
+            <button className="ghost" onClick={t.clear}>
+              履歴を消す
+            </button>
+          )}
+          {live && (
+            <button className="ghost danger" onClick={t.stop}>
+              終了
+            </button>
+          )}
+        </div>
+
         {mode === "talk" ? (
           <div className="talk-controls">
             <TalkButton
@@ -175,21 +196,6 @@ export default function Translator() {
               <span className="record-icon" />
               {connecting ? "接続中…" : live ? "停止" : "翻訳をはじめる"}
             </button>
-          </div>
-        )}
-
-        {(live || t.segments.length > 0) && (
-          <div className="subcontrols">
-            {t.segments.length > 0 && (
-              <button className="ghost" onClick={t.clear}>
-                履歴を消す
-              </button>
-            )}
-            {live && (
-              <button className="ghost danger" onClick={t.stop}>
-                セッション終了
-              </button>
-            )}
           </div>
         )}
       </footer>

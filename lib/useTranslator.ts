@@ -26,6 +26,21 @@ const CALLS_URL = "https://api.openai.com/v1/realtime/translations/calls";
 
 let segCounter = 0;
 
+/** Turn a getUserMedia failure into a clear, mobile-friendly Japanese message. */
+function micErrorMessage(err: unknown): string {
+  const name = err instanceof DOMException ? err.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return "マイクの使用が許可されませんでした。ブラウザ／OSの設定でマイクを許可してから、もう一度お試しください。";
+  }
+  if (name === "NotFoundError" || name === "OverconstrainedError") {
+    return "マイクが見つかりませんでした。デバイスのマイクを確認してください。";
+  }
+  if (name === "NotReadableError") {
+    return "マイクを使用できませんでした。他のアプリがマイクを使用していないか確認してください。";
+  }
+  return err instanceof Error ? err.message : "マイクを起動できませんでした。";
+}
+
 export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +50,9 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   const [speaking, setSpeaking] = useState(false);
   const [muted, setMutedState] = useState(false);
   const [outputLang, setOutputLang] = useState("en");
+  // Translated audio playback is OFF by default — text is the primary output,
+  // and keeping the speaker off avoids echo/feedback that disrupts mic VAD on phones.
+  const [audioOn, setAudioOnState] = useState(false);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
@@ -42,6 +60,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   const srcBuf = useRef("");
   const tgtBuf = useRef("");
   const outLangRef = useRef("en");
+  const audioOnRef = useRef(false);
 
   const finalize = useCallback(() => {
     const source = srcBuf.current.trim();
@@ -118,17 +137,62 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     tgtBuf.current = "";
   }, [audioRef]);
 
+  // Reflect the current audio-output preference onto the <audio> element.
+  // Muted autoplay is always allowed; unmuting happens from a user gesture.
+  const applyAudio = useCallback(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    el.muted = !audioOnRef.current;
+    if (audioOnRef.current) void el.play().catch(() => {});
+  }, [audioRef]);
+
+  const setAudioOn = useCallback(
+    (on: boolean) => {
+      audioOnRef.current = on;
+      setAudioOnState(on);
+      applyAudio();
+    },
+    [applyAudio],
+  );
+
   const start = useCallback(
     async (initialOutputLang: string) => {
       if (pcRef.current) return;
       setError(null);
-      setStatus("connecting");
       outLangRef.current = initialOutputLang;
       setOutputLang(initialOutputLang);
       setMutedState(false);
 
+      // 1. Capture the microphone FIRST, synchronously inside the tap gesture.
+      //    iOS Safari revokes the user-activation after an unrelated await, so
+      //    getUserMedia must run before the token fetch or it silently fails.
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setError(
+          "このブラウザでは音声入力を利用できません。HTTPSのSafari/Chromeなど対応ブラウザで開いてください（アプリ内ブラウザでは動かないことがあります）。",
+        );
+        setStatus("error");
+        return;
+      }
+      setStatus("connecting");
+      let stream: MediaStream;
       try {
-        // 1. Mint a single-use ephemeral secret from our own backend.
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1,
+          },
+        });
+      } catch (err) {
+        setError(micErrorMessage(err));
+        setStatus("error");
+        return;
+      }
+      streamRef.current = stream;
+
+      try {
+        // 2. Mint a single-use ephemeral secret from our own backend.
         const tokenRes = await fetch("/api/session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -142,24 +206,15 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
           throw new Error(tokenData.error ?? "Failed to start a session.");
         }
 
-        // 2. Capture the microphone.
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
-        streamRef.current = stream;
-
         // 3. Build the peer connection.
         const pc = new RTCPeerConnection();
         pcRef.current = pc;
 
         pc.ontrack = (e) => {
-          if (audioRef.current) {
-            audioRef.current.srcObject = e.streams[0];
-            void audioRef.current.play().catch(() => {});
+          const el = audioRef.current;
+          if (el) {
+            el.srcObject = e.streams[0];
+            applyAudio();
           }
         };
         pc.onconnectionstatechange = () => {
@@ -216,7 +271,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         cleanup();
       }
     },
-    [audioRef, handleEvent, sendOutputLanguage, cleanup],
+    [audioRef, handleEvent, sendOutputLanguage, cleanup, applyAudio],
   );
 
   const setOutputLanguage = useCallback(
@@ -253,10 +308,12 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     speaking,
     muted,
     outputLang,
+    audioOn,
     start,
     stop,
     setOutputLanguage,
     setMuted,
+    setAudioOn,
     clear,
   };
 }

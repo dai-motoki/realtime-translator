@@ -512,6 +512,39 @@ select {
   50% { opacity: 0.55; }
 }
 
+.options {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.audio-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: auto;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--fg-dim);
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.audio-toggle .audio-ico {
+  font-size: 15px;
+  line-height: 1;
+}
+.audio-toggle.on {
+  color: #04231a;
+  background: linear-gradient(180deg, #34e6ab, #1fc492);
+  border-color: transparent;
+}
+.audio-toggle:active {
+  transform: scale(0.96);
+}
+
 .subcontrols {
   display: flex;
   justify-content: center;
