@@ -94,34 +94,56 @@ export default function Translator() {
     if (optRunning.current) return;
     optRunning.current = true;
     setOptimizing(true);
+    // How many already-refined lines to send as read-only context.
+    const CONTEXT_LINES = 4;
+    // Track what we've optimized this run so we make progress even before the
+    // `refined` flag has propagated back into segsRef.
+    const done = new Set<string>();
     try {
-      let lastLen = -1;
-      // Loop so that lines finalized *during* a request get re-optimized too.
-      while (segsRef.current.length !== lastLen && segsRef.current.length > 0) {
+      // Optimize only the latest, not-yet-refined lines (prioritising the
+      // newest conversation) instead of re-editing the whole transcript every
+      // time. Loops to pick up lines finalized *during* a request.
+      while (true) {
         const snapshot = segsRef.current;
-        lastLen = snapshot.length;
-        const lines = snapshot.map((s) => ({
-          source: s.rawSource,
-          target: s.rawTarget,
-          sourceLang: s.sourceLang,
-          targetLang: s.outputLang,
-        }));
+        const firstIdx = snapshot.findIndex(
+          (s) => !s.refined && !done.has(s.id),
+        );
+        if (firstIdx === -1) break;
+
+        const ctxStart = Math.max(0, firstIdx - CONTEXT_LINES);
+        const windowSegs = snapshot.slice(ctxStart);
+        const optimizeFrom = firstIdx - ctxStart;
+        const targets = windowSegs.slice(optimizeFrom);
+
+        // Context lines use their already-polished text; targets use the raw
+        // realtime text so the model re-edits from the original.
+        const lines = windowSegs.map((s, idx) => {
+          const isCtx = idx < optimizeFrom;
+          return {
+            source: isCtx ? s.source : s.rawSource,
+            target: isCtx ? s.target : s.rawTarget,
+            sourceLang: s.sourceLang,
+            targetLang: s.outputLang,
+          };
+        });
+
         let out: RefinedLine[] | null = null;
         try {
           const res = await fetch("/api/refine", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ lines }),
+            body: JSON.stringify({ lines, optimizeFrom }),
           });
           const data = (await res.json()) as { lines?: RefinedLine[] };
-          if (Array.isArray(data.lines) && data.lines.length === snapshot.length) {
+          if (Array.isArray(data.lines) && data.lines.length === targets.length) {
             out = data.lines;
           }
         } catch {
           out = null;
         }
-        snapshot.forEach((s, i) => {
+        targets.forEach((s, i) => {
           const r = out?.[i];
+          done.add(s.id);
           t.patchSegment(s.id, {
             source: typeof r?.source === "string" ? r.source : s.source,
             target: typeof r?.target === "string" ? r.target : s.target,
@@ -239,7 +261,7 @@ export default function Translator() {
         <div className="brand">
           <span className="brand-dot" data-status={t.status} />
           <span className="brand-name">
-            {optimizing ? "✨ 全文を最適化中…" : "Realtime Translate"}
+            {optimizing ? "✨ 最新の会話を最適化中…" : "Realtime Translate"}
           </span>
         </div>
         <div className="seg">

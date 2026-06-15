@@ -14,13 +14,19 @@ interface Line {
 }
 interface RefineBody {
   lines?: Line[];
+  /**
+   * Index into `lines` where the lines that should actually be re-edited begin.
+   * Everything before it is read-only context. Defaults to 0 (edit all), which
+   * keeps the old "optimize the whole conversation" behaviour.
+   */
+  optimizeFrom?: number;
 }
 
-const SYSTEM = `You are a meticulous editor for a live, two-way interpreted conversation. Below is the ENTIRE conversation as captured in real time. Each line has a raw transcription ("source", in the language it was spoken) and a raw machine translation ("target"). These can contain speech-recognition mistakes, wrong word boundaries, dropped words, numbers/names heard wrong, or awkward phrasing.
+const SYSTEM = `You are a meticulous editor for a live, two-way interpreted conversation. You are given a short window of consecutive lines. Each line has a raw transcription ("source", in the language it was spoken) and a raw machine translation ("target"), and is tagged either [CTX] (already-finalized context — do NOT change, shown only for reference) or [EDIT] (to correct now). Raw lines can contain speech-recognition mistakes, wrong word boundaries, dropped words, numbers/names heard wrong, or awkward phrasing.
 
-Re-edit the WHOLE conversation using the full context. For EACH line, output the corrected transcription and the most natural, accurate translation, keeping terminology, names, numbers, pronouns and tone consistent across the entire conversation.
+Using the whole window as context, re-edit ONLY the [EDIT] lines. For EACH [EDIT] line output the corrected transcription and the most natural, accurate translation, keeping terminology, names, numbers, pronouns and tone consistent with the context.
 
-Return STRICT JSON of the form {"lines":[{"source":"...","target":"..."}, ...]} with EXACTLY the same number of lines, in the same order as given. For each line keep "source" in its original spoken language (do NOT translate it) and put the translation in "target" in that line's target language. If a line is already correct, return it unchanged. Output JSON only, no commentary.`;
+Return STRICT JSON of the form {"lines":[{"source":"...","target":"..."}, ...]} containing EXACTLY the [EDIT] lines, in the same order. For each line keep "source" in its original spoken language (do NOT translate it) and put the translation in "target" in that line's target language. If a line is already correct, return it unchanged. Output JSON only, no commentary.`;
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -32,26 +38,30 @@ export async function POST(request: NextRequest) {
     // fall through
   }
   const lines = Array.isArray(body.lines) ? body.lines : [];
+  const fromRaw =
+    typeof body.optimizeFrom === "number" ? Math.floor(body.optimizeFrom) : 0;
+  const from = Math.min(Math.max(0, fromRaw), lines.length);
+  const targets = lines.slice(from);
 
-  // Graceful no-op: return the input lines unchanged so the UI keeps its text.
+  // Graceful no-op: return the edit targets unchanged so the UI keeps its text.
   const fallback = () =>
     Response.json({
-      lines: lines.map((l) => ({ source: l.source, target: l.target })),
+      lines: targets.map((l) => ({ source: l.source, target: l.target })),
     });
 
-  if (!apiKey || lines.length === 0) return fallback();
+  if (!apiKey || targets.length === 0) return fallback();
 
   const convo = lines
     .map((l, i) =>
       [
-        `#${i + 1} (${l.sourceLang ?? "auto"} -> ${l.targetLang ?? "?"})`,
+        `#${i + 1} ${i < from ? "[CTX]" : "[EDIT]"} (${l.sourceLang ?? "auto"} -> ${l.targetLang ?? "?"})`,
         `  source: ${JSON.stringify(l.source ?? "")}`,
         `  target: ${JSON.stringify(l.target ?? "")}`,
       ].join("\n"),
     )
     .join("\n");
 
-  const userMsg = `Conversation (${lines.length} lines):\n${convo}\n\nReturn {"lines":[...]} with exactly ${lines.length} items in the same order.`;
+  const userMsg = `Conversation window (${lines.length} lines, ${targets.length} to edit):\n${convo}\n\nReturn {"lines":[...]} with exactly ${targets.length} items — only the [EDIT] lines, in the same order.`;
 
   try {
     const res = await fetch(CHAT_URL, {
@@ -85,10 +95,10 @@ export async function POST(request: NextRequest) {
     }
 
     const out = parsed.lines;
-    if (!Array.isArray(out) || out.length !== lines.length) return fallback();
+    if (!Array.isArray(out) || out.length !== targets.length) return fallback();
 
     // Merge defensively: keep the original where the model omitted a field.
-    const merged = lines.map((orig, i) => {
+    const merged = targets.map((orig, i) => {
       const r = out[i] as { source?: unknown; target?: unknown } | undefined;
       return {
         source: typeof r?.source === "string" ? r.source : orig.source,
