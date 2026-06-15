@@ -42,7 +42,7 @@ const CALLS_URL = "https://api.openai.com/v1/realtime/translations/calls";
 // utterance ends. So we segment the continuous transcript ourselves: a line is
 // finalized after this much silence (no new deltas), or immediately when the
 // spoken language switches (the other person started talking).
-const SEGMENT_GAP_MS = 1400;
+const SEGMENT_GAP_MS = 1000;
 
 let segCounter = 0;
 
@@ -99,19 +99,37 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     clearGap();
     const source = srcBuf.current.trim();
     const target = tgtBuf.current.trim();
+    const lastSegLang = segLangRef.current;
     srcBuf.current = "";
     tgtBuf.current = "";
     segLangRef.current = null;
     setPartialSource("");
     setPartialTarget("");
-    if (source || target) {
-      const pair = autoPairRef.current;
-      let sourceLang: string | null = null;
-      if (pair) {
-        sourceLang =
-          detectPairLanguage(source, pair.a, pair.b) ??
-          (outLangRef.current === pair.a ? pair.b : pair.a);
-      }
+
+    const pair = autoPairRef.current;
+    if (pair) {
+      // Auto two-way mode: the realtime model only transcribes (its output is a
+      // throw-away neutral language). Direction is decided purely from the
+      // detected SOURCE language, and the translation is produced by GPT later.
+      if (!source) return;
+      const sourceLang =
+        detectPairLanguage(source, pair.a, pair.b) ?? lastSegLang ?? pair.a;
+      const outputLang = sourceLang === pair.a ? pair.b : pair.a;
+      setSegments((prev) => [
+        ...prev,
+        {
+          id: `seg-${++segCounter}`,
+          source,
+          target: "", // filled by the GPT translation/optimize pass
+          rawSource: source,
+          rawTarget: "",
+          outputLang,
+          sourceLang,
+          at: Date.now(),
+        },
+      ]);
+    } else if (source || target) {
+      // Live (one-way) mode uses the realtime translation directly.
       setSegments((prev) => [
         ...prev,
         {
@@ -121,7 +139,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
           rawSource: source,
           rawTarget: target,
           outputLang: outLangRef.current,
-          sourceLang,
+          sourceLang: null,
           at: Date.now(),
         },
       ]);
@@ -148,7 +166,8 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
           // spoken audio (independent of output language), so this is reliable.
           const dLang = detectPairLanguage(delta, pair.a, pair.b);
           if (dLang) {
-            // The other person started talking → close the previous line first.
+            // The other person started talking (language switched) → close the
+            // previous line so it becomes its own bubble.
             if (
               segLangRef.current &&
               dLang !== segLangRef.current &&
@@ -157,20 +176,6 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
               finalize();
             }
             segLangRef.current = dLang;
-            // Flip the output to the listener's language before translation runs.
-            const other = dLang === pair.a ? pair.b : pair.a;
-            if (other !== outLangRef.current) {
-              outLangRef.current = other;
-              const dc = dcRef.current;
-              if (dc && dc.readyState === "open") {
-                dc.send(
-                  JSON.stringify({
-                    type: "session.update",
-                    session: { audio: { output: { language: other } } },
-                  }),
-                );
-              }
-            }
           }
         }
         srcBuf.current += delta;
@@ -178,9 +183,13 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         setSpeaking(true);
         scheduleGap();
       } else if (type.endsWith("output_transcript.delta")) {
-        tgtBuf.current += evt.delta ?? "";
-        setPartialTarget(tgtBuf.current);
-        scheduleGap();
+        // In auto mode the realtime output is a throw-away neutral language —
+        // ignore it (GPT does the real translation). Live mode uses it directly.
+        if (!autoPairRef.current) {
+          tgtBuf.current += evt.delta ?? "";
+          setPartialTarget(tgtBuf.current);
+          scheduleGap();
+        }
       } else if (type.endsWith("session.closed")) {
         finalize();
         setSpeaking(false);

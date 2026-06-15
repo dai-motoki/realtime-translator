@@ -196,7 +196,14 @@ export default function Translator() {
     if (t.status === "idle" || t.status === "error") {
       void enableOrientation();
       t.setAutoPair({ a: langA, b: langB });
-      await t.start(langB);
+      // Set the realtime output to a language NEITHER speaker uses, so the model
+      // always does a genuine translation and emits a clean source transcript
+      // for both languages. We ignore that output and translate with GPT.
+      const neutral =
+        ["de", "fr", "es", "ko", "ru", "nl", "zh"].find(
+          (c) => c !== langA && c !== langB,
+        ) ?? "de";
+      await t.start(neutral);
     } else {
       t.stop();
     }
@@ -314,14 +321,16 @@ export default function Translator() {
 
       <footer className="controls">
         <div className="options">
-          <button
-            className={`audio-toggle ${t.audioOn ? "on" : ""}`}
-            onClick={() => t.setAudioOn(!t.audioOn)}
-            aria-pressed={t.audioOn}
-          >
-            <span className="audio-ico">{t.audioOn ? "🔊" : "🔇"}</span>
-            音声出力 {t.audioOn ? "ON" : "OFF"}
-          </button>
+          {mode === "live" && (
+            <button
+              className={`audio-toggle ${t.audioOn ? "on" : ""}`}
+              onClick={() => t.setAudioOn(!t.audioOn)}
+              aria-pressed={t.audioOn}
+            >
+              <span className="audio-ico">{t.audioOn ? "🔊" : "🔇"}</span>
+              音声出力 {t.audioOn ? "ON" : "OFF"}
+            </button>
+          )}
           <button
             className={`audio-toggle flip ${flipped ? "on" : ""}`}
             onClick={() => setFlipped((v) => !v)}
