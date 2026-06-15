@@ -31,3 +31,43 @@ const BY_CODE = new Map(LANGUAGES.map((l) => [l.code, l]));
 export function getLanguage(code: string): Language {
   return BY_CODE.get(code) ?? LANGUAGES[0];
 }
+
+// Latin-script output languages (used to disambiguate a Latin transcript).
+const LATIN_LANGS = new Set(["en", "es", "fr", "de", "it", "pt", "nl"]);
+
+function scriptOf(text: string): string | null {
+  if (/[぀-ゟ゠-ヿ]/.test(text)) return "ja"; // kana
+  if (/[가-힯]/.test(text)) return "ko"; // hangul
+  if (/[Ѐ-ӿ]/.test(text)) return "ru"; // cyrillic
+  if (/[؀-ۿ]/.test(text)) return "ar"; // arabic
+  if (/[ऀ-ॿ]/.test(text)) return "hi"; // devanagari
+  if (/[一-鿿]/.test(text)) return "cjk"; // han (no kana ⇒ likely zh)
+  if (/[a-zA-Z]/.test(text)) return "latin";
+  return null;
+}
+
+/**
+ * For a known two-language conversation pair, decide which language `text` is
+ * written in (used to auto-pick the translation direction). Returns null when
+ * the two languages share a script and can't be told apart from text alone.
+ */
+export function detectPairLanguage(
+  text: string,
+  a: string,
+  b: string,
+): string | null {
+  const s = scriptOf(text);
+  if (!s) return null;
+  const inPair = (x: string): string | null => (a === x ? a : b === x ? b : null);
+  if (s === "latin") {
+    const aL = LATIN_LANGS.has(a);
+    const bL = LATIN_LANGS.has(b);
+    if (aL && !bL) return a;
+    if (bL && !aL) return b;
+    return null;
+  }
+  if (s === "cjk") {
+    return inPair("zh") ?? inPair("ja");
+  }
+  return inPair(s);
+}

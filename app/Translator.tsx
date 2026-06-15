@@ -7,8 +7,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { LANGUAGES, getLanguage } from "@/lib/languages";
-import { useTranslator } from "@/lib/useTranslator";
+import { LANGUAGES, getLanguage, detectPairLanguage } from "@/lib/languages";
+import { useTranslator, type Segment } from "@/lib/useTranslator";
 import {
   detectPlatform,
   getMicPermission,
@@ -18,7 +18,6 @@ import {
 } from "@/lib/platform";
 
 type Mode = "talk" | "live";
-type Side = "A" | "B";
 
 // Browser-only platform detection, exposed via useSyncExternalStore so it stays
 // SSR-safe (server snapshot = null) without a hydration mismatch.
@@ -35,10 +34,9 @@ export default function Translator() {
 
   const [mode, setMode] = useState<Mode>("talk");
 
-  // Conversation mode: A = your side, B = their side.
+  // Conversation language pair (auto two-way translation between these two).
   const [langA, setLangA] = useState("ja");
   const [langB, setLangB] = useState("en");
-  const [activeSide, setActiveSide] = useState<Side | null>(null);
 
   // Live mode: translate everything heard into this language.
   const [targetLang, setTargetLang] = useState("ja");
@@ -52,6 +50,26 @@ export default function Translator() {
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  // Auto-scroll the transcript as new content arrives.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [t.segments, t.partialSource, t.partialTarget]);
+
+  // Keep the auto-translation pair in sync with the selected languages.
+  useEffect(() => {
+    t.setAutoPair(mode === "talk" ? { a: langA, b: langB } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, langA, langB]);
+
+  // Keep the live-mode output language in sync when it changes mid-session.
+  useEffect(() => {
+    if (mode === "live" && t.status === "live") {
+      t.setOutputLanguage(targetLang);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetLang]);
+
   // Read the current mic permission on mount so we can warn before the first tap.
   useEffect(() => {
     let alive = true;
@@ -63,56 +81,25 @@ export default function Translator() {
     };
   }, []);
 
-  // Auto-scroll the transcript as new content arrives.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [t.segments, t.partialSource, t.partialTarget]);
-
-  // Keep the live-mode output language in sync when it changes mid-session.
-  useEffect(() => {
-    if (mode === "live" && t.status === "live") {
-      t.setOutputLanguage(targetLang);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetLang]);
-
   const switchMode = useCallback(
     (next: Mode) => {
       if (next === mode) return;
       t.stop();
-      setActiveSide(null);
       setMode(next);
     },
     [mode, t],
   );
 
-  // ----- Conversation mode -----
-  const onTalkSide = useCallback(
-    async (side: Side) => {
-      const other = side === "A" ? langB : langA;
-      if (t.status === "idle" || t.status === "error") {
-        setActiveSide(side);
-        await t.start(other);
-      } else if (activeSide === side) {
-        // Tap the active side again to pause listening.
-        t.setMuted(true);
-        setActiveSide(null);
-      } else {
-        t.setOutputLanguage(other);
-        t.setMuted(false);
-        setActiveSide(side);
-      }
-    },
-    [activeSide, langA, langB, t],
-  );
+  // Conversation: one tap starts a single session; direction is automatic.
+  const onConvToggle = useCallback(async () => {
+    if (t.status === "idle" || t.status === "error") {
+      t.setAutoPair({ a: langA, b: langB });
+      await t.start(langB);
+    } else {
+      t.stop();
+    }
+  }, [t, langA, langB]);
 
-  const swap = useCallback(() => {
-    setLangA(langB);
-    setLangB(langA);
-  }, [langA, langB]);
-
-  // ----- Live mode -----
   const onLiveToggle = useCallback(async () => {
     if (t.status === "idle" || t.status === "error") {
       await t.start(targetLang);
@@ -121,19 +108,32 @@ export default function Translator() {
     }
   }, [t, targetLang]);
 
+  const swap = useCallback(() => {
+    setLangA(langB);
+    setLangB(langA);
+  }, [langA, langB]);
+
   const retry = useCallback(() => {
     getMicPermission().then(setMicPerm);
-    if (mode === "talk") void onTalkSide(activeSide ?? "A");
+    if (mode === "talk") void onConvToggle();
     else void onLiveToggle();
-  }, [mode, activeSide, onTalkSide, onLiveToggle]);
+  }, [mode, onConvToggle, onLiveToggle]);
 
   const live = t.status === "live";
   const connecting = t.status === "connecting";
 
-  // Mic-related trouble: blocked permission, or an error mentioning the mic.
   const micBlocked =
     micPerm === "denied" ||
-    (!!t.error && /マイク|許可|permission|allow|secure|HTTPS|ブラウザ/i.test(t.error));
+    (!!t.error &&
+      /マイク|許可|permission|allow|secure|HTTPS|ブラウザ/i.test(t.error));
+
+  const startLabel = connecting
+    ? "接続中…"
+    : live
+      ? "停止"
+      : mode === "talk"
+        ? "会話を始める"
+        : "翻訳をはじめる";
 
   return (
     <div className="app">
@@ -191,12 +191,12 @@ export default function Translator() {
 
       <main className="transcript" ref={scrollRef}>
         {mode === "talk" ? (
-          <TalkTranscript
+          <ChatTranscript
             segments={t.segments}
+            langA={langA}
             langB={langB}
             partialSource={t.partialSource}
             partialTarget={t.partialTarget}
-            activeSide={activeSide}
           />
         ) : (
           <LiveTranscript
@@ -230,41 +230,22 @@ export default function Translator() {
           )}
         </div>
 
-        {mode === "talk" ? (
-          <div className="talk-controls">
-            <TalkButton
-              lang={langA}
-              active={activeSide === "A"}
-              speaking={t.speaking}
-              busy={connecting}
-              onClick={() => onTalkSide("A")}
-            />
-            <TalkButton
-              lang={langB}
-              active={activeSide === "B"}
-              speaking={t.speaking}
-              busy={connecting}
-              onClick={() => onTalkSide("B")}
-            />
-          </div>
-        ) : (
-          <div className="live-controls">
-            <button
-              className={`record ${live ? "on" : ""}`}
-              onClick={onLiveToggle}
-              disabled={connecting}
-            >
-              <span className="record-icon" />
-              {connecting ? "接続中…" : live ? "停止" : "翻訳をはじめる"}
-            </button>
-          </div>
-        )}
+        <div className="live-controls">
+          <button
+            className={`record ${live ? "on" : ""}`}
+            onClick={mode === "talk" ? onConvToggle : onLiveToggle}
+            disabled={connecting}
+          >
+            <span className="record-icon" />
+            {startLabel}
+          </button>
+        </div>
       </footer>
     </div>
   );
 }
 
-/* ---------------- Conversation language bar ---------------- */
+/* ---------------- Language bars ---------------- */
 
 function LangBar({
   langA,
@@ -355,49 +336,81 @@ function LangSelect({
   );
 }
 
-/* ---------------- Conversation transcript ---------------- */
+/* ---------------- Conversation (LINE-style chat) ---------------- */
 
-function TalkTranscript({
+function ChatTranscript({
   segments,
+  langA,
   langB,
   partialSource,
   partialTarget,
-  activeSide,
 }: {
-  segments: ReturnType<typeof useTranslator>["segments"];
+  segments: Segment[];
+  langA: string;
   langB: string;
   partialSource: string;
   partialTarget: string;
-  activeSide: Side | null;
 }) {
   if (segments.length === 0 && !partialSource && !partialTarget) {
     return (
       <Empty
-        title="会話をはじめましょう"
-        body="話す言語のボタンを押してから話してください。相手の言語に翻訳した音声が再生され、字幕も表示されます。"
+        title="自動で双方向に翻訳"
+        body="「会話を始める」を押して、日本語でも英語でもそのまま話してください。話した言語を自動で判定し、相手の言語に翻訳してチャットに表示します。"
       />
     );
   }
+  const sideOf = (src: string) => (src === langA ? "a" : "b");
   return (
-    <div className="bubbles">
+    <div className="chat">
       {segments.map((s) => {
-        // Output went to B ⇒ the speaker was side A ("you").
-        const mine = s.outputLang === langB;
+        const src =
+          s.sourceLang ?? (s.outputLang === langA ? langB : langA);
         return (
-          <div key={s.id} className={`bubble ${mine ? "mine" : "theirs"}`}>
-            <p className="bubble-main">{s.target || "…"}</p>
-            {s.source && <p className="bubble-sub">{s.source}</p>}
-          </div>
+          <ChatMsg
+            key={s.id}
+            side={sideOf(src)}
+            srcLang={src}
+            original={s.source}
+            translated={s.target}
+          />
         );
       })}
       {(partialSource || partialTarget) && (
-        <div
-          className={`bubble pending ${activeSide === "A" ? "mine" : "theirs"}`}
-        >
-          <p className="bubble-main">{partialTarget || "…"}</p>
-          {partialSource && <p className="bubble-sub">{partialSource}</p>}
-        </div>
+        <ChatMsg
+          side={sideOf(detectPairLanguage(partialSource, langA, langB) ?? langA)}
+          srcLang={detectPairLanguage(partialSource, langA, langB) ?? langA}
+          original={partialSource}
+          translated={partialTarget}
+          pending
+        />
       )}
+    </div>
+  );
+}
+
+function ChatMsg({
+  side,
+  srcLang,
+  original,
+  translated,
+  pending,
+}: {
+  side: "a" | "b";
+  srcLang: string;
+  original: string;
+  translated: string;
+  pending?: boolean;
+}) {
+  const lang = getLanguage(srcLang);
+  return (
+    <div className={`msg ${side}${pending ? " pending" : ""}`}>
+      <span className="msg-avatar" aria-hidden>
+        {lang.flag}
+      </span>
+      <div className="msg-bubble">
+        <p className="msg-orig">{original || "…"}</p>
+        {translated && <p className="msg-trans">{translated}</p>}
+      </div>
     </div>
   );
 }
@@ -410,7 +423,7 @@ function LiveTranscript({
   partialTarget,
   live,
 }: {
-  segments: ReturnType<typeof useTranslator>["segments"];
+  segments: Segment[];
   partialSource: string;
   partialTarget: string;
   live: boolean;
@@ -422,7 +435,7 @@ function LiveTranscript({
         body={
           live
             ? "話しかけてください。聞こえた音声をリアルタイムで翻訳します。"
-            : "出力言語を選び「翻訳をはじめる」を押してください。講演や動画など、聞こえる音声を字幕＋音声で翻訳します。"
+            : "出力言語を選び「翻訳をはじめる」を押してください。講演や動画など、聞こえる音声を字幕で翻訳します。"
         }
       />
     );
@@ -442,44 +455,6 @@ function LiveTranscript({
         </div>
       )}
     </div>
-  );
-}
-
-/* ---------------- Talk button ---------------- */
-
-function TalkButton({
-  lang,
-  active,
-  speaking,
-  busy,
-  onClick,
-}: {
-  lang: string;
-  active: boolean;
-  speaking: boolean;
-  busy: boolean;
-  onClick: () => void;
-}) {
-  const l = getLanguage(lang);
-  return (
-    <button
-      className={`talk ${active ? "active" : ""} ${active && speaking ? "speaking" : ""}`}
-      onClick={onClick}
-      disabled={busy}
-    >
-      <span className="talk-flag">{l.flag}</span>
-      <span className="talk-name">{l.name}</span>
-      <span className="talk-hint">
-        {active ? (speaking ? "聞いています…" : "話してください") : "押して話す"}
-      </span>
-      <span className="talk-wave" aria-hidden>
-        <i />
-        <i />
-        <i />
-        <i />
-        <i />
-      </span>
-    </button>
   );
 }
 

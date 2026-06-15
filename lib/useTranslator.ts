@@ -1,8 +1,14 @@
 "use client";
 
 import { type RefObject, useCallback, useRef, useState } from "react";
+import { detectPairLanguage } from "@/lib/languages";
 
 export type Status = "idle" | "connecting" | "live" | "error";
+
+export interface LangPair {
+  a: string;
+  b: string;
+}
 
 export interface Segment {
   id: string;
@@ -12,6 +18,8 @@ export interface Segment {
   target: string;
   /** Output language code this segment was translated into */
   outputLang: string;
+  /** Detected language the source was spoken in (auto mode), else null */
+  sourceLang: string | null;
   at: number;
 }
 
@@ -61,6 +69,9 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   const tgtBuf = useRef("");
   const outLangRef = useRef("en");
   const audioOnRef = useRef(false);
+  // When set, the translation direction is chosen automatically per utterance
+  // from the detected source language (no manual side switching).
+  const autoPairRef = useRef<LangPair | null>(null);
 
   const finalize = useCallback(() => {
     const source = srcBuf.current.trim();
@@ -70,6 +81,13 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     setPartialSource("");
     setPartialTarget("");
     if (source || target) {
+      const pair = autoPairRef.current;
+      let sourceLang: string | null = null;
+      if (pair) {
+        sourceLang =
+          detectPairLanguage(source, pair.a, pair.b) ??
+          (outLangRef.current === pair.a ? pair.b : pair.a);
+      }
       setSegments((prev) => [
         ...prev,
         {
@@ -77,6 +95,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
           source,
           target,
           outputLang: outLangRef.current,
+          sourceLang,
           at: Date.now(),
         },
       ]);
@@ -89,6 +108,28 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
       if (type.endsWith("input_transcript.delta")) {
         srcBuf.current += evt.delta ?? "";
         setPartialSource(srcBuf.current);
+        // Auto direction: the source transcript streams while the speaker is
+        // still talking — before the translation starts — so we can detect the
+        // spoken language and flip the output language in time.
+        const pair = autoPairRef.current;
+        if (pair) {
+          const src = detectPairLanguage(srcBuf.current, pair.a, pair.b);
+          if (src) {
+            const other = src === pair.a ? pair.b : pair.a;
+            if (other !== outLangRef.current) {
+              outLangRef.current = other;
+              const dc = dcRef.current;
+              if (dc && dc.readyState === "open") {
+                dc.send(
+                  JSON.stringify({
+                    type: "session.update",
+                    session: { audio: { output: { language: other } } },
+                  }),
+                );
+              }
+            }
+          }
+        }
       } else if (type.endsWith("output_transcript.delta")) {
         tgtBuf.current += evt.delta ?? "";
         setPartialTarget(tgtBuf.current);
@@ -300,6 +341,11 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     setMutedState(m);
   }, []);
 
+  // Enable/disable automatic two-way direction for the given language pair.
+  const setAutoPair = useCallback((pair: LangPair | null) => {
+    autoPairRef.current = pair;
+  }, []);
+
   const stop = useCallback(() => {
     finalize();
     cleanup();
@@ -325,6 +371,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     setOutputLanguage,
     setMuted,
     setAudioOn,
+    setAutoPair,
     clear,
   };
 }
