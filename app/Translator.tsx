@@ -1,11 +1,33 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { LANGUAGES, getLanguage } from "@/lib/languages";
 import { useTranslator } from "@/lib/useTranslator";
+import {
+  detectPlatform,
+  getMicPermission,
+  micFixSteps,
+  type MicPermission,
+  type Platform,
+} from "@/lib/platform";
 
 type Mode = "talk" | "live";
 type Side = "A" | "B";
+
+// Browser-only platform detection, exposed via useSyncExternalStore so it stays
+// SSR-safe (server snapshot = null) without a hydration mismatch.
+let cachedPlatform: Platform | null = null;
+function platformSnapshot(): Platform | null {
+  if (!cachedPlatform) cachedPlatform = detectPlatform();
+  return cachedPlatform;
+}
+const noopSubscribe = () => () => {};
 
 export default function Translator() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -21,7 +43,25 @@ export default function Translator() {
   // Live mode: translate everything heard into this language.
   const [targetLang, setTargetLang] = useState("ja");
 
+  const platform = useSyncExternalStore(
+    noopSubscribe,
+    platformSnapshot,
+    () => null,
+  );
+  const [micPerm, setMicPerm] = useState<MicPermission>("unknown");
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Read the current mic permission on mount so we can warn before the first tap.
+  useEffect(() => {
+    let alive = true;
+    getMicPermission().then((p) => {
+      if (alive) setMicPerm(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Auto-scroll the transcript as new content arrives.
   useEffect(() => {
@@ -81,8 +121,19 @@ export default function Translator() {
     }
   }, [t, targetLang]);
 
+  const retry = useCallback(() => {
+    getMicPermission().then(setMicPerm);
+    if (mode === "talk") void onTalkSide(activeSide ?? "A");
+    else void onLiveToggle();
+  }, [mode, activeSide, onTalkSide, onLiveToggle]);
+
   const live = t.status === "live";
   const connecting = t.status === "connecting";
+
+  // Mic-related trouble: blocked permission, or an error mentioning the mic.
+  const micBlocked =
+    micPerm === "denied" ||
+    (!!t.error && /マイク|許可|permission|allow|secure|HTTPS|ブラウザ/i.test(t.error));
 
   return (
     <div className="app">
@@ -109,10 +160,20 @@ export default function Translator() {
         </div>
       </header>
 
-      {t.error && (
-        <div className="banner error" role="alert">
-          {t.error}
+      {platform?.inApp && (
+        <div className="banner warn" role="alert">
+          ⚠️ {platform.inApp} のアプリ内ブラウザではマイクが使えません。右上メニューから
+          <b> Safari / Chrome で開く</b>を選んでください。
         </div>
+      )}
+
+      {(t.error || (micBlocked && t.status !== "live")) && (
+        <MicHelp
+          platform={platform}
+          isMicProblem={micBlocked}
+          message={t.error}
+          onRetry={retry}
+        />
       )}
 
       {mode === "talk" ? (
@@ -419,6 +480,49 @@ function TalkButton({
         <i />
       </span>
     </button>
+  );
+}
+
+/* ---------------- Mic / error help ---------------- */
+
+function MicHelp({
+  platform,
+  isMicProblem,
+  message,
+  onRetry,
+}: {
+  platform: Platform | null;
+  isMicProblem: boolean;
+  message: string | null;
+  onRetry: () => void;
+}) {
+  const steps = isMicProblem && platform ? micFixSteps(platform) : [];
+  return (
+    <div className="michelp" role="alert">
+      <div className="michelp-head">
+        <span className="michelp-ico">🎤</span>
+        {isMicProblem ? "マイクを使えませんでした" : "エラーが発生しました"}
+      </div>
+      {message && <p className="michelp-msg">{message}</p>}
+      {steps.length > 0 && (
+        <ol className="michelp-steps">
+          {steps.map((s, i) => (
+            <li key={i}>{s}</li>
+          ))}
+        </ol>
+      )}
+      <div className="michelp-actions">
+        <button className="michelp-btn primary" onClick={onRetry}>
+          もう一度試す
+        </button>
+        <button
+          className="michelp-btn"
+          onClick={() => window.location.reload()}
+        >
+          再読み込み
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -181,13 +181,24 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true,
-            channelCount: 1,
           },
         });
       } catch (err) {
-        setError(micErrorMessage(err));
-        setStatus("error");
-        return;
+        const name = err instanceof DOMException ? err.name : "";
+        // Permission/security failures won't be fixed by relaxing constraints.
+        if (name === "NotAllowedError" || name === "SecurityError") {
+          setError(micErrorMessage(err));
+          setStatus("error");
+          return;
+        }
+        // Some devices reject specific constraints — retry with the basics.
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (err2) {
+          setError(micErrorMessage(err2));
+          setStatus("error");
+          return;
+        }
       }
       streamRef.current = stream;
 

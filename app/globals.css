@@ -166,6 +166,76 @@ select {
   background: rgba(255, 90, 106, 0.14);
   border: 1px solid rgba(255, 90, 106, 0.35);
 }
+.banner.warn {
+  color: #ffe9c2;
+  background: rgba(255, 184, 77, 0.14);
+  border: 1px solid rgba(255, 184, 77, 0.38);
+}
+.banner.warn b {
+  color: #fff;
+}
+
+/* Mic / error help card */
+.michelp {
+  flex: 0 0 auto;
+  margin: 12px 16px 0;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 90, 106, 0.1);
+  border: 1px solid rgba(255, 90, 106, 0.3);
+}
+.michelp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffd7db;
+}
+.michelp-ico {
+  font-size: 17px;
+}
+.michelp-msg {
+  margin-top: 7px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+.michelp-steps {
+  margin: 10px 0 2px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.michelp-steps li {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg);
+}
+.michelp-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+.michelp-btn {
+  flex: 1 1 0;
+  padding: 11px;
+  font-size: 14px;
+  font-weight: 650;
+  border-radius: 12px;
+  color: var(--fg);
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line-strong);
+}
+.michelp-btn.primary {
+  color: #fff;
+  background: linear-gradient(180deg, var(--accent), #4f6fe6);
+  border-color: transparent;
+}
+.michelp-btn:active {
+  transform: scale(0.97);
+}
 
 /* ---------------- Language bar ---------------- */
 
