@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Realtime Translate 🌐
 
-## Getting Started
+スマホネイティブUIの**リアルタイム多言語音声翻訳**Webアプリ。話した言葉をその場で別の言語の**音声＋字幕**に翻訳します。
 
-First, run the development server:
+OpenAI の専用モデル [`gpt-realtime-translate`](https://developers.openai.com/api/docs/models/gpt-realtime-translate) を、ブラウザから **WebRTC** で直接利用します（入力音声は70以上の言語を自動検出）。
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 特長
+
+- **会話モード** — 2言語をタップで切り替える対面翻訳。話す側のボタンを押して話すと、相手の言語に翻訳した音声が流れ、字幕がチャット形式で残ります。
+- **ライブモード** — 講演・動画・会議など、聞こえてくる音声をひとつの言語へ連続翻訳（テロップ表示）。
+- **低遅延 / S2S** — STT→翻訳→TTSの分割ではなく、音声をそのまま音声へ翻訳。声のトーンも引き継がれます。
+- **スマホネイティブUI** — セーフエリア対応・大きなタップ領域・PWA対応（ホーム画面に追加でフルスクリーン）。
+- **APIキーは漏れない** — サーバ側で短命の ephemeral client secret を発行し、ブラウザには標準APIキーを渡しません。
+
+## 仕組み
+
+```
+ブラウザ ──POST /api/session──▶ Next.js Route Handler ──▶ OpenAI
+  │                              (OPENAI_API_KEY で client_secret 発行)
+  │◀── ephemeral client secret ──┘
+  │
+  └─ WebRTC (SDP) ──▶ https://api.openai.com/v1/realtime/translations/calls
+        マイク音声を送信 ／ 翻訳音声トラック＋字幕デルタを受信
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- トークン発行: `POST /v1/realtime/translations/client_secrets`（モデル `gpt-realtime-translate`）
+- 接続: `POST /v1/realtime/translations/calls`（`oai-events` データチャネル）
+- 出力言語の切替: `session.update` の `audio.output.language`
+- 受信イベント: `session.input_transcript.delta`（原文）/ `session.output_transcript.delta`（訳文）
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## セットアップ
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pnpm install
+cp .env.example .env.local   # OPENAI_API_KEY を設定
+pnpm dev
+```
 
-## Learn More
+[http://localhost:3000](http://localhost:3000) を開く（マイク利用のため `localhost` または HTTPS が必要）。
 
-To learn more about Next.js, take a look at the following resources:
+### 環境変数
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| 変数 | 用途 |
+| --- | --- |
+| `OPENAI_API_KEY` | サーバ側のみ。Realtime translation の client secret 発行に使用。 |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Vercel へのデプロイ
 
-## Deploy on Vercel
+このリポジトリを Vercel に接続し、Environment Variables に `OPENAI_API_KEY` を追加するだけです（ビルド設定はNext.js標準）。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+vercel --prod
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 技術スタック
+
+Next.js 16 (App Router) / React 19 / TypeScript / WebRTC / OpenAI `gpt-realtime-translate`。UIは依存ライブラリなしの自作CSS。
+
+## メモ
+
+- 入力言語は自動検出されるため、話す言語を選ぶ必要はありません（選ぶのは「翻訳先」だけ）。
+- 出力対応言語はアプリ内の13言語。`lib/languages.ts` で増減できます。
+- 課金は音声時間に対して発生します（モデル料金は OpenAI の料金表を参照）。
