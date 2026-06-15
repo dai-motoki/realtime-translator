@@ -1,6 +1,6 @@
 "use client";
 
-import { type RefObject, useCallback, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { detectPairLanguage } from "@/lib/languages";
 
 export type Status = "idle" | "connecting" | "live" | "error";
@@ -37,20 +37,22 @@ interface Session {
 const CLIENT_SECRET_URL = "/api/session";
 const CALLS_URL = "https://api.openai.com/v1/realtime/translations/calls";
 
-// We deliberately DO NOT keep a long-lived realtime translation session.
-// A persistent session degrades over time (transcripts silently stop coming
-// in), so instead we listen to the mic *locally* and only open a brand-new
-// realtime session while the user is actually speaking — then tear it down on
-// every pause. Each utterance therefore gets a fresh session, fresh language
-// detection, and a fresh API call. Nothing is ever reused.
-//
-// Local voice-activity-detection (VAD) thresholds, tuned for typical phone /
-// laptop mics with the browser's own noise suppression already applied.
-const VAD_OPEN_RMS = 0.02; // energy above this → start of an utterance
-const VAD_VOICE_RMS = 0.012; // energy above this → speech is still ongoing
-const SILENCE_MS = 700; // audio quiet for this long → utterance ended
-const FLUSH_MS = 600; // also wait for the transcript tail to stop arriving
-const VAD_INTERVAL_MS = 60; // how often we sample the mic energy
+// The translation API has "no turn lifecycle" — it never tells us where an
+// utterance ends. We segment ourselves: finalize a displayed line after this
+// much silence, or immediately when the spoken language switches.
+const SEGMENT_GAP_MS = 1000;
+
+// A long-lived realtime session degrades over time (transcripts silently stop
+// arriving), so we never keep one around. We open a session up front (so the
+// very first word is captured cleanly), then *cut it and mint a brand-new one*
+// whenever the speaker has gone quiet for this long — i.e. on every pause.
+// Each fresh session re-detects the language and re-hits the API from scratch.
+const RECYCLE_SILENCE_MS = 2500;
+
+// Safety net for long, pause-less monologues: even without a real pause, force
+// a fresh session at the next segment boundary once the current one is this
+// old, so a single session is never relied on for long.
+const MAX_SESSION_MS = 30000;
 
 let segCounter = 0;
 
@@ -83,17 +85,9 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   const outLangsRef = useRef<string[]>([]);
   const singleRef = useRef(false);
   const audioOnRef = useRef(false);
-
-  // Local voice-activity detection (no API session involved).
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const vadDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
-  const vadTimerRef = useRef<number | null>(null);
   const runningRef = useRef(false);
   const openingRef = useRef(false);
-  const lastVoiceRef = useRef(0);
-  const lastDeltaRef = useRef(0);
+  const sessionOpenedAtRef = useRef(0);
 
   // Per-utterance buffers.
   const srcBuf = useRef("");
@@ -101,8 +95,33 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   const segLangRef = useRef<string | null>(null);
   const listenerLangRef = useRef<string | null>(null);
   const autoPairRef = useRef<LangPair | null>(null);
+  const gapTimerRef = useRef<number | null>(null);
+  const recycleTimerRef = useRef<number | null>(null);
+
+  // Latest-value refs let the timer callbacks and the data-channel handler call
+  // into these without forming a useCallback dependency cycle.
+  const finalizeRef = useRef<() => void>(() => {});
+  const recycleRef = useRef<() => void>(() => {});
+  const handleEventRef = useRef<
+    (evt: RealtimeEvent, lang: string, isPrimary: boolean) => void
+  >(() => {});
+
+  const clearTimers = useCallback(() => {
+    if (gapTimerRef.current != null) {
+      clearTimeout(gapTimerRef.current);
+      gapTimerRef.current = null;
+    }
+    if (recycleTimerRef.current != null) {
+      clearTimeout(recycleTimerRef.current);
+      recycleTimerRef.current = null;
+    }
+  }, []);
 
   const finalize = useCallback(() => {
+    if (gapTimerRef.current != null) {
+      clearTimeout(gapTimerRef.current);
+      gapTimerRef.current = null;
+    }
     const source = srcBuf.current.trim();
     const lastSegLang = segLangRef.current;
     const pair = autoPairRef.current;
@@ -145,6 +164,32 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     ]);
   }, []);
 
+  const scheduleGap = useCallback(() => {
+    if (gapTimerRef.current != null) clearTimeout(gapTimerRef.current);
+    gapTimerRef.current = window.setTimeout(() => {
+      gapTimerRef.current = null;
+      finalizeRef.current();
+      setSpeaking(false);
+      // At a natural pause, refresh an aged session even if the longer
+      // recycle timer hasn't fired yet.
+      if (
+        sessionsRef.current.length &&
+        !openingRef.current &&
+        Date.now() - sessionOpenedAtRef.current > MAX_SESSION_MS
+      ) {
+        recycleRef.current();
+      }
+    }, SEGMENT_GAP_MS);
+  }, []);
+
+  const scheduleRecycle = useCallback(() => {
+    if (recycleTimerRef.current != null) clearTimeout(recycleTimerRef.current);
+    recycleTimerRef.current = window.setTimeout(() => {
+      recycleTimerRef.current = null;
+      recycleRef.current();
+    }, RECYCLE_SILENCE_MS);
+  }, []);
+
   const handleEvent = useCallback(
     (evt: RealtimeEvent, lang: string, isPrimary: boolean) => {
       const type = evt.type ?? "";
@@ -153,7 +198,6 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         // Both sessions transcribe the same audio — only the primary feeds the
         // source, to avoid double-counting.
         if (!isPrimary) return;
-        lastDeltaRef.current = Date.now();
         const delta = evt.delta ?? "";
         const pair = autoPairRef.current;
         if (pair && delta) {
@@ -165,7 +209,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
               dLang !== segLangRef.current &&
               srcBuf.current.trim()
             ) {
-              finalize();
+              finalizeRef.current();
             }
             segLangRef.current = dLang;
             listenerLangRef.current = dLang === pair.a ? pair.b : pair.a;
@@ -175,8 +219,9 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         srcBuf.current += delta;
         setPartialSource(srcBuf.current);
         setSpeaking(true);
+        scheduleGap();
+        scheduleRecycle();
       } else if (type.endsWith("output_transcript.delta")) {
-        lastDeltaRef.current = Date.now();
         const delta = evt.delta ?? "";
         tgtBufs.current[lang] = (tgtBufs.current[lang] ?? "") + delta;
         const pair = autoPairRef.current;
@@ -185,11 +230,13 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         if (!pair || lang === listenerLangRef.current) {
           setPartialTarget(tgtBufs.current[lang]);
         }
+        scheduleGap();
+        scheduleRecycle();
       } else if (type === "error" || evt.error) {
         setError(evt.error?.message ?? "Realtime error");
       }
     },
-    [finalize],
+    [scheduleGap, scheduleRecycle],
   );
 
   const applyAudio = useCallback(() => {
@@ -208,8 +255,8 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     [applyAudio],
   );
 
-  // Open a *fresh* realtime translation session (one per output language) for
-  // the utterance that just started. Never reuses a previous session.
+  // Mint a fresh realtime translation session for one output language. Always a
+  // new credential, peer connection and language detection — never reused.
   const buildSession = useCallback(
     async (lang: string, isPrimary: boolean): Promise<Session> => {
       const stream = streamRef.current;
@@ -245,7 +292,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
       const dc = pc.createDataChannel("oai-events");
       dc.onmessage = (e) => {
         try {
-          handleEvent(
+          handleEventRef.current(
             JSON.parse(e.data as string) as RealtimeEvent,
             lang,
             isPrimary,
@@ -277,7 +324,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
       });
       return { pc, dc, outputLang: lang };
     },
-    [audioRef, applyAudio, handleEvent],
+    [audioRef, applyAudio],
   );
 
   const closeSessions = useCallback(() => {
@@ -293,19 +340,16 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     if (audioRef.current) audioRef.current.srcObject = null;
   }, [audioRef]);
 
-  const openSessions = useCallback(async () => {
-    if (openingRef.current || sessionsRef.current.length) return;
+  const openSessions = useCallback(async (): Promise<boolean> => {
+    if (openingRef.current || sessionsRef.current.length) return true;
+    if (!runningRef.current || !streamRef.current) return false;
     openingRef.current = true;
-    const now = Date.now();
-    lastVoiceRef.current = now;
-    lastDeltaRef.current = now;
     try {
       const langs = outLangsRef.current;
       const sessions = await Promise.all(
         langs.map((lang, i) => buildSession(lang, i === 0)),
       );
-      // If listening was stopped (or a pause already closed us) while we were
-      // negotiating, throw the just-built session away.
+      // Listening may have stopped (or been re-cut) while we negotiated.
       if (!runningRef.current) {
         for (const s of sessions) {
           try {
@@ -315,86 +359,53 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
             s.pc.close();
           } catch {}
         }
-        return;
+        return false;
       }
       sessionsRef.current = sessions;
-      lastDeltaRef.current = Date.now();
+      sessionOpenedAtRef.current = Date.now();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       openingRef.current = false;
     }
   }, [buildSession]);
 
-  // Sampled ~16×/sec: opens a fresh session when speech starts, and finalizes
-  // + cuts the session entirely once the speaker pauses.
-  const vadTick = useCallback(() => {
-    if (!runningRef.current) return;
-    const analyser = analyserRef.current;
-    const data = vadDataRef.current;
-    if (!analyser || !data) return;
+  // Cut the current session(s) and immediately mint fresh ones. Called on each
+  // sustained pause and when a session has aged out.
+  const recycle = useCallback(() => {
+    if (!runningRef.current || openingRef.current) return;
+    finalizeRef.current();
+    closeSessions();
+    setSpeaking(false);
+    void openSessions();
+  }, [closeSessions, openSessions]);
 
-    analyser.getByteTimeDomainData(data);
-    let sum = 0;
-    for (let i = 0; i < data.length; i++) {
-      const x = (data[i] - 128) / 128;
-      sum += x * x;
-    }
-    const rms = Math.sqrt(sum / data.length);
-    const now = Date.now();
-    const active = sessionsRef.current.length > 0;
-
-    if (rms > VAD_OPEN_RMS) {
-      lastVoiceRef.current = now;
-      if (!active && !openingRef.current) {
-        setSpeaking(true);
-        void openSessions();
-      }
-    } else if (rms > VAD_VOICE_RMS && active) {
-      lastVoiceRef.current = now;
-    }
-
-    if (active) {
-      const quietFor = now - lastVoiceRef.current;
-      const sinceDelta = now - lastDeltaRef.current;
-      // End the utterance only once the audio has gone quiet AND the model has
-      // stopped streaming its transcript tail — then cut the session.
-      if (quietFor > SILENCE_MS && sinceDelta > FLUSH_MS) {
-        finalize();
-        closeSessions();
-        setSpeaking(false);
-      }
-    }
-  }, [openSessions, finalize, closeSessions]);
+  // Keep the latest-value refs in sync (used by timers / the data channel to
+  // avoid useCallback dependency cycles).
+  useEffect(() => {
+    finalizeRef.current = finalize;
+    handleEventRef.current = handleEvent;
+    recycleRef.current = recycle;
+  });
 
   const cleanup = useCallback(() => {
     runningRef.current = false;
-    if (vadTimerRef.current != null) {
-      clearInterval(vadTimerRef.current);
-      vadTimerRef.current = null;
-    }
-    closeSessions();
     openingRef.current = false;
-    try {
-      sourceNodeRef.current?.disconnect();
-    } catch {}
-    sourceNodeRef.current = null;
-    analyserRef.current = null;
-    vadDataRef.current = null;
-    const ctx = audioCtxRef.current;
-    audioCtxRef.current = null;
-    if (ctx && ctx.state !== "closed") void ctx.close().catch(() => {});
+    clearTimers();
+    closeSessions();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     srcBuf.current = "";
     tgtBufs.current = {};
     segLangRef.current = null;
     listenerLangRef.current = null;
-  }, [closeSessions]);
+  }, [clearTimers, closeSessions]);
 
   const start = useCallback(
     async (outputLangs: string[]) => {
-      if (runningRef.current) return;
+      if (runningRef.current || sessionsRef.current.length) return;
       setError(null);
       outLangsRef.current = outputLangs;
       singleRef.current = outputLangs.length === 1;
@@ -434,40 +445,17 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         }
       }
       streamRef.current = stream;
+      runningRef.current = true;
 
-      // Wire up local voice-activity detection. This stays open for the whole
-      // session, but it is entirely local — no API session is held open here.
-      try {
-        const Ctx =
-          window.AudioContext ??
-          (window as unknown as { webkitAudioContext: typeof AudioContext })
-            .webkitAudioContext;
-        const ctx = new Ctx();
-        if (ctx.state === "suspended") await ctx.resume().catch(() => {});
-        const sourceNode = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 1024;
-        sourceNode.connect(analyser);
-        audioCtxRef.current = ctx;
-        sourceNodeRef.current = sourceNode;
-        analyserRef.current = analyser;
-        vadDataRef.current = new Uint8Array(new ArrayBuffer(analyser.fftSize));
-      } catch (err) {
-        setError(micErrorMessage(err));
+      const ok = await openSessions();
+      if (ok) {
+        setStatus("live");
+      } else if (runningRef.current) {
         setStatus("error");
         cleanup();
-        return;
       }
-
-      runningRef.current = true;
-      lastVoiceRef.current = Date.now();
-      lastDeltaRef.current = Date.now();
-      vadTimerRef.current = window.setInterval(vadTick, VAD_INTERVAL_MS);
-      // "live" = armed and listening locally; sessions are opened on demand,
-      // one fresh per utterance.
-      setStatus("live");
     },
-    [cleanup, vadTick],
+    [openSessions, cleanup],
   );
 
   const setMuted = useCallback((m: boolean) => {
