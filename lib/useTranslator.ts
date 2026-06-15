@@ -1,22 +1,17 @@
 "use client";
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
-import { detectPairLanguage } from "@/lib/languages";
+import { detectLanguage } from "@/lib/languages";
 
 export type Status = "idle" | "connecting" | "live" | "error";
-
-export interface LangPair {
-  a: string;
-  b: string;
-}
 
 export interface Segment {
   id: string;
   source: string;
-  target: string;
   rawSource: string;
-  rawTarget: string;
-  outputLang: string;
+  /** Translations keyed by output language (every language except the spoken one). */
+  targets: Record<string, string>;
+  rawTargets: Record<string, string>;
   sourceLang: string | null;
   refined?: boolean;
   at: number;
@@ -75,7 +70,9 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   const [error, setError] = useState<string | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [partialSource, setPartialSource] = useState("");
-  const [partialTarget, setPartialTarget] = useState("");
+  const [partialTargets, setPartialTargets] = useState<Record<string, string>>(
+    {},
+  );
   const [speaking, setSpeaking] = useState(false);
   const [muted, setMutedState] = useState(false);
   const [audioOn, setAudioOnState] = useState(false);
@@ -93,8 +90,9 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   const srcBuf = useRef("");
   const tgtBufs = useRef<Record<string, string>>({}); // by output language
   const segLangRef = useRef<string | null>(null);
-  const listenerLangRef = useRef<string | null>(null);
-  const autoPairRef = useRef<LangPair | null>(null);
+  // Conversation languages (auto multi-way translation). null ⇒ live mode
+  // (translate everything into the single configured output language).
+  const autoLangsRef = useRef<string[] | null>(null);
   const gapTimerRef = useRef<number | null>(null);
   const recycleTimerRef = useRef<number | null>(null);
 
@@ -117,47 +115,66 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     }
   }, []);
 
+  // The languages we currently show translations for: every conversation
+  // language except the one being spoken (or the single live-mode output).
+  const activeTargetLangs = useCallback((): string[] => {
+    const langs = autoLangsRef.current;
+    if (langs) {
+      const src = segLangRef.current;
+      return src ? langs.filter((l) => l !== src) : langs;
+    }
+    return outLangsRef.current;
+  }, []);
+
+  const refreshPartialTargets = useCallback(() => {
+    const out: Record<string, string> = {};
+    for (const l of activeTargetLangs()) {
+      if (tgtBufs.current[l]) out[l] = tgtBufs.current[l];
+    }
+    setPartialTargets(out);
+  }, [activeTargetLangs]);
+
   const finalize = useCallback(() => {
     if (gapTimerRef.current != null) {
       clearTimeout(gapTimerRef.current);
       gapTimerRef.current = null;
     }
     const source = srcBuf.current.trim();
-    const lastSegLang = segLangRef.current;
-    const pair = autoPairRef.current;
+    const langs = autoLangsRef.current;
 
-    let target = "";
-    let outputLang = outLangsRef.current[0] ?? "en";
     let sourceLang: string | null = null;
-
-    if (pair) {
+    let targetLangs: string[];
+    if (langs) {
       sourceLang =
-        detectPairLanguage(source, pair.a, pair.b) ?? lastSegLang ?? pair.a;
-      outputLang = sourceLang === pair.a ? pair.b : pair.a; // listener's language
-      target = (tgtBufs.current[outputLang] ?? "").trim();
+        detectLanguage(source, langs) ?? segLangRef.current ?? langs[0];
+      targetLangs = langs.filter((l) => l !== sourceLang);
     } else {
-      outputLang = outLangsRef.current[0] ?? "en";
-      target = (tgtBufs.current[outputLang] ?? "").trim();
+      targetLangs = outLangsRef.current;
+    }
+
+    const targets: Record<string, string> = {};
+    for (const l of targetLangs) {
+      const v = (tgtBufs.current[l] ?? "").trim();
+      if (v) targets[l] = v;
     }
 
     srcBuf.current = "";
     tgtBufs.current = {};
     segLangRef.current = null;
-    listenerLangRef.current = null;
     setPartialSource("");
-    setPartialTarget("");
+    setPartialTargets({});
 
-    if (pair ? !source : !source && !target) return;
+    const hasTarget = Object.keys(targets).length > 0;
+    if (langs ? !source : !source && !hasTarget) return;
 
     setSegments((prev) => [
       ...prev,
       {
         id: `seg-${++segCounter}`,
         source,
-        target,
         rawSource: source,
-        rawTarget: target,
-        outputLang,
+        targets,
+        rawTargets: { ...targets },
         sourceLang,
         at: Date.now(),
       },
@@ -195,15 +212,15 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
       const type = evt.type ?? "";
 
       if (type.endsWith("input_transcript.delta")) {
-        // Both sessions transcribe the same audio — only the primary feeds the
+        // Every session transcribes the same audio — only the primary feeds the
         // source, to avoid double-counting.
         if (!isPrimary) return;
         const delta = evt.delta ?? "";
-        const pair = autoPairRef.current;
-        if (pair && delta) {
-          const dLang = detectPairLanguage(delta, pair.a, pair.b);
+        const langs = autoLangsRef.current;
+        if (langs && delta) {
+          const dLang = detectLanguage(delta, langs);
           if (dLang) {
-            // Other person started talking → close the previous line.
+            // Speaker switched language → close the previous line first.
             if (
               segLangRef.current &&
               dLang !== segLangRef.current &&
@@ -212,8 +229,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
               finalizeRef.current();
             }
             segLangRef.current = dLang;
-            listenerLangRef.current = dLang === pair.a ? pair.b : pair.a;
-            setPartialTarget(tgtBufs.current[listenerLangRef.current] ?? "");
+            refreshPartialTargets();
           }
         }
         srcBuf.current += delta;
@@ -224,19 +240,14 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
       } else if (type.endsWith("output_transcript.delta")) {
         const delta = evt.delta ?? "";
         tgtBufs.current[lang] = (tgtBufs.current[lang] ?? "") + delta;
-        const pair = autoPairRef.current;
-        // Show the translation for the current listener (auto) / the only
-        // output (live).
-        if (!pair || lang === listenerLangRef.current) {
-          setPartialTarget(tgtBufs.current[lang]);
-        }
+        if (activeTargetLangs().includes(lang)) refreshPartialTargets();
         scheduleGap();
         scheduleRecycle();
       } else if (type === "error" || evt.error) {
         setError(evt.error?.message ?? "Realtime error");
       }
     },
-    [scheduleGap, scheduleRecycle],
+    [activeTargetLangs, refreshPartialTargets, scheduleGap, scheduleRecycle],
   );
 
   const applyAudio = useCallback(() => {
@@ -277,7 +288,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
 
       const pc = new RTCPeerConnection();
       // Only play translated audio when there's a single output (live mode);
-      // in two-way mode there are two competing outputs, so audio stays off.
+      // in multi-way mode there are competing outputs, so audio stays off.
       if (singleRef.current) {
         pc.ontrack = (e) => {
           const el = audioRef.current;
@@ -400,7 +411,6 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     srcBuf.current = "";
     tgtBufs.current = {};
     segLangRef.current = null;
-    listenerLangRef.current = null;
   }, [clearTimers, closeSessions]);
 
   const start = useCallback(
@@ -464,8 +474,10 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     setMutedState(m);
   }, []);
 
-  const setAutoPair = useCallback((pair: LangPair | null) => {
-    autoPairRef.current = pair;
+  // Set the conversation languages (auto multi-way translation), or null for
+  // single-output live mode.
+  const setAutoLangs = useCallback((langs: string[] | null) => {
+    autoLangsRef.current = langs && langs.length ? langs : null;
   }, []);
 
   const stop = useCallback(() => {
@@ -489,7 +501,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     error,
     segments,
     partialSource,
-    partialTarget,
+    partialTargets,
     speaking,
     muted,
     audioOn,
@@ -497,7 +509,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     stop,
     setMuted,
     setAudioOn,
-    setAutoPair,
+    setAutoLangs,
     clear,
     patchSegment,
   };

@@ -7,7 +7,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { LANGUAGES, getLanguage, detectPairLanguage } from "@/lib/languages";
+import { LANGUAGES, getLanguage, detectLanguage } from "@/lib/languages";
 import { useTranslator, type Segment } from "@/lib/useTranslator";
 import {
   detectPlatform,
@@ -18,7 +18,11 @@ import {
 } from "@/lib/platform";
 
 type Mode = "talk" | "live";
-type RefinedLine = { source?: string; target?: string };
+type RefinedTarget = { lang?: string; target?: string };
+type RefinedLine = { source?: string; targets?: RefinedTarget[] };
+
+// Default conversation languages (speak any one → translated into the others).
+const DEFAULT_CONV_LANGS = ["ja", "en", "zh"];
 
 // Browser-only platform detection, exposed via useSyncExternalStore so it stays
 // SSR-safe (server snapshot = null) without a hydration mismatch.
@@ -35,9 +39,21 @@ export default function Translator() {
 
   const [mode, setMode] = useState<Mode>("talk");
 
-  // Conversation language pair (auto two-way translation between these two).
-  const [langA, setLangA] = useState("ja");
-  const [langB, setLangB] = useState("en");
+  // Conversation languages (auto multi-way translation: speak any one and it's
+  // translated into all the others).
+  const [convLangs, setConvLangs] = useState<string[]>(DEFAULT_CONV_LANGS);
+
+  const toggleConvLang = useCallback((code: string) => {
+    setConvLangs((prev) => {
+      if (prev.includes(code)) {
+        // Keep at least two languages in the conversation.
+        return prev.length > 2 ? prev.filter((c) => c !== code) : prev;
+      }
+      // Keep selection ordered by the master language list for stable display.
+      const next = [...prev, code];
+      return LANGUAGES.map((l) => l.code).filter((c) => next.includes(c));
+    });
+  }, []);
 
   // Live mode: translate everything heard into this language.
   const [targetLang, setTargetLang] = useState("ja");
@@ -61,13 +77,13 @@ export default function Translator() {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [t.segments, t.partialSource, t.partialTarget]);
+  }, [t.segments, t.partialSource, t.partialTargets]);
 
-  // Keep the auto-translation pair in sync with the selected languages.
+  // Keep the auto-translation languages in sync with the selection.
   useEffect(() => {
-    t.setAutoPair(mode === "talk" ? { a: langA, b: langB } : null);
+    t.setAutoLangs(mode === "talk" ? convLangs : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, langA, langB]);
+  }, [mode, convLangs]);
 
   // Read the current mic permission on mount so we can warn before the first tap.
   useEffect(() => {
@@ -80,9 +96,9 @@ export default function Translator() {
     };
   }, []);
 
-  // Post-pass optimization: every time a NEW line is finalized, re-optimize the
-  // WHOLE conversation from the raw real-time text (both transcription and
-  // translation), using GPT-5.5 with full context, then swap every bubble.
+  // Post-pass optimization: when a NEW line is finalized, re-optimize the latest
+  // not-yet-refined lines from the raw real-time text (transcription and all
+  // translations), using GPT-5.5 with recent context, then swap those bubbles.
   const segsRef = useRef(t.segments);
   useEffect(() => {
     segsRef.current = t.segments;
@@ -119,11 +135,14 @@ export default function Translator() {
         // realtime text so the model re-edits from the original.
         const lines = windowSegs.map((s, idx) => {
           const isCtx = idx < optimizeFrom;
+          const map = isCtx ? s.targets : s.rawTargets;
           return {
             source: isCtx ? s.source : s.rawSource,
-            target: isCtx ? s.target : s.rawTarget,
             sourceLang: s.sourceLang,
-            targetLang: s.outputLang,
+            targets: Object.entries(map).map(([lang, target]) => ({
+              lang,
+              target,
+            })),
           };
         });
 
@@ -144,9 +163,18 @@ export default function Translator() {
         targets.forEach((s, i) => {
           const r = out?.[i];
           done.add(s.id);
+          // Merge any returned translations back over the existing ones.
+          const nextTargets = { ...s.targets };
+          if (Array.isArray(r?.targets)) {
+            for (const rt of r.targets) {
+              if (rt && typeof rt.lang === "string" && typeof rt.target === "string") {
+                nextTargets[rt.lang] = rt.target;
+              }
+            }
+          }
           t.patchSegment(s.id, {
             source: typeof r?.source === "string" ? r.source : s.source,
-            target: typeof r?.target === "string" ? r.target : s.target,
+            targets: nextTargets,
             refined: true,
           });
         });
@@ -205,31 +233,26 @@ export default function Translator() {
     [mode, t],
   );
 
-  // Conversation: two realtime sessions (one per language) run at once so BOTH
-  // directions are translated live; we show the one going away from the speaker.
+  // Conversation: one realtime session per language runs at once, so whoever
+  // speaks is translated into every other language live.
   const onConvToggle = useCallback(async () => {
     if (t.status === "idle" || t.status === "error") {
       void enableOrientation();
-      t.setAutoPair({ a: langA, b: langB });
-      await t.start([langA, langB]);
+      t.setAutoLangs(convLangs);
+      await t.start(convLangs);
     } else {
       t.stop();
     }
-  }, [t, langA, langB, enableOrientation]);
+  }, [t, convLangs, enableOrientation]);
 
   const onLiveToggle = useCallback(async () => {
     if (t.status === "idle" || t.status === "error") {
-      t.setAutoPair(null);
+      t.setAutoLangs(null);
       await t.start([targetLang]);
     } else {
       t.stop();
     }
   }, [t, targetLang]);
-
-  const swap = useCallback(() => {
-    setLangA(langB);
-    setLangB(langA);
-  }, [langA, langB]);
 
   const retry = useCallback(() => {
     getMicPermission().then(setMicPerm);
@@ -297,12 +320,9 @@ export default function Translator() {
       )}
 
       {mode === "talk" ? (
-        <LangBar
-          langA={langA}
-          langB={langB}
-          onChangeA={setLangA}
-          onChangeB={setLangB}
-          onSwap={swap}
+        <LangChips
+          selected={convLangs}
+          onToggle={toggleConvLang}
           disabled={live || connecting}
         />
       ) : (
@@ -313,16 +333,15 @@ export default function Translator() {
         {mode === "talk" ? (
           <ChatTranscript
             segments={t.segments}
-            langA={langA}
-            langB={langB}
+            convLangs={convLangs}
             partialSource={t.partialSource}
-            partialTarget={t.partialTarget}
+            partialTargets={t.partialTargets}
           />
         ) : (
           <LiveTranscript
             segments={t.segments}
             partialSource={t.partialSource}
-            partialTarget={t.partialTarget}
+            partialTargets={t.partialTargets}
             live={live}
           />
         )}
@@ -378,43 +397,33 @@ export default function Translator() {
 
 /* ---------------- Language bars ---------------- */
 
-function LangBar({
-  langA,
-  langB,
-  onChangeA,
-  onChangeB,
-  onSwap,
+function LangChips({
+  selected,
+  onToggle,
   disabled,
 }: {
-  langA: string;
-  langB: string;
-  onChangeA: (v: string) => void;
-  onChangeB: (v: string) => void;
-  onSwap: () => void;
+  selected: string[];
+  onToggle: (code: string) => void;
   disabled: boolean;
 }) {
   return (
-    <div className="langbar">
-      <LangSelect
-        value={langA}
-        onChange={onChangeA}
-        exclude={langB}
-        disabled={disabled}
-      />
-      <button
-        className="swap"
-        onClick={onSwap}
-        disabled={disabled}
-        aria-label="言語を入れ替え"
-      >
-        ⇄
-      </button>
-      <LangSelect
-        value={langB}
-        onChange={onChangeB}
-        exclude={langA}
-        disabled={disabled}
-      />
+    <div className={`langchips${disabled ? " disabled" : ""}`}>
+      {LANGUAGES.map((l) => {
+        const on = selected.includes(l.code);
+        return (
+          <button
+            key={l.code}
+            type="button"
+            className={`langchip${on ? " on" : ""}`}
+            aria-pressed={on}
+            disabled={disabled}
+            onClick={() => onToggle(l.code)}
+          >
+            <span className="langchip-flag">{l.flag}</span>
+            <span className="langchip-name">{l.name}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -469,53 +478,70 @@ function LangSelect({
 
 /* ---------------- Conversation (LINE-style chat) ---------------- */
 
+type ChatTarget = { lang: string; text: string };
+
 function ChatTranscript({
   segments,
-  langA,
-  langB,
+  convLangs,
   partialSource,
-  partialTarget,
+  partialTargets,
 }: {
   segments: Segment[];
-  langA: string;
-  langB: string;
+  convLangs: string[];
   partialSource: string;
-  partialTarget: string;
+  partialTargets: Record<string, string>;
 }) {
-  if (segments.length === 0 && !partialSource && !partialTarget) {
+  const hasPartial =
+    !!partialSource || Object.keys(partialTargets).length > 0;
+  if (segments.length === 0 && !hasPartial) {
     return (
       <Empty
-        title="自動で双方向に翻訳"
-        body="「会話を始める」を押して、日本語でも英語でもそのまま話してください。話した言語を自動で判定し、相手の言語に翻訳してチャットに表示します。"
+        title="自動で多言語に翻訳"
+        body="「会話を始める」を押して、選んだ言語のどれかでそのまま話してください。話した言語を自動で判定し、ほかの言語すべてに翻訳してチャットに表示します。"
       />
     );
   }
-  const sideOf = (src: string) => (src === langA ? "a" : "b");
+  const sideOf = (lang: string) =>
+    convLangs.indexOf(lang) % 2 === 0 ? "a" : "b";
+  const targetsOf = (
+    src: string,
+    map: Record<string, string>,
+    keepEmpty: boolean,
+  ): ChatTarget[] =>
+    convLangs
+      .filter((l) => l !== src)
+      .map((l) => ({ lang: l, text: map[l] ?? "" }))
+      .filter((x) => keepEmpty || x.text);
+
   return (
     <div className="chat">
       {segments.map((s) => {
         const src =
-          s.sourceLang ?? (s.outputLang === langA ? langB : langA);
+          s.sourceLang ?? detectLanguage(s.source, convLangs) ?? convLangs[0];
         return (
           <ChatMsg
             key={s.id}
             side={sideOf(src)}
             srcLang={src}
             original={s.source}
-            translated={s.target}
+            targets={targetsOf(src, s.targets, false)}
             refined={s.refined}
           />
         );
       })}
-      {(partialSource || partialTarget) && (
-        <ChatMsg
-          side={sideOf(detectPairLanguage(partialSource, langA, langB) ?? langA)}
-          srcLang={detectPairLanguage(partialSource, langA, langB) ?? langA}
-          original={partialSource}
-          translated={partialTarget}
-          pending
-        />
-      )}
+      {hasPartial &&
+        (() => {
+          const src = detectLanguage(partialSource, convLangs) ?? convLangs[0];
+          return (
+            <ChatMsg
+              side={sideOf(src)}
+              srcLang={src}
+              original={partialSource}
+              targets={targetsOf(src, partialTargets, true)}
+              pending
+            />
+          );
+        })()}
     </div>
   );
 }
@@ -524,14 +550,14 @@ function ChatMsg({
   side,
   srcLang,
   original,
-  translated,
+  targets,
   pending,
   refined,
 }: {
   side: "a" | "b";
   srcLang: string;
   original: string;
-  translated: string;
+  targets: ChatTarget[];
   pending?: boolean;
   refined?: boolean;
 }) {
@@ -542,16 +568,23 @@ function ChatMsg({
         {lang.flag}
       </span>
       <div className="msg-bubble">
-        {/* translation on top, transcription (original) below */}
+        {/* what was actually said (top), then a translation per language */}
         <p className="msg-main">
-          {translated || "…"}
+          {original || "…"}
           {refined && (
             <span className="msg-badge" title="GPT-5.5で最適化済み">
               ✨
             </span>
           )}
         </p>
-        {original && <p className="msg-sub">{original}</p>}
+        {targets.map((tg) => (
+          <p key={tg.lang} className="msg-trans">
+            <span className="msg-trans-flag" aria-hidden>
+              {getLanguage(tg.lang).flag}
+            </span>
+            {tg.text || "…"}
+          </p>
+        ))}
       </div>
     </div>
   );
@@ -562,15 +595,18 @@ function ChatMsg({
 function LiveTranscript({
   segments,
   partialSource,
-  partialTarget,
+  partialTargets,
   live,
 }: {
   segments: Segment[];
   partialSource: string;
-  partialTarget: string;
+  partialTargets: Record<string, string>;
   live: boolean;
 }) {
-  if (segments.length === 0 && !partialSource && !partialTarget) {
+  const firstVal = (m: Record<string, string>) => Object.values(m)[0] ?? "";
+  const hasPartial =
+    !!partialSource || Object.keys(partialTargets).length > 0;
+  if (segments.length === 0 && !hasPartial) {
     return (
       <Empty
         title="ライブ翻訳"
@@ -586,13 +622,13 @@ function LiveTranscript({
     <div className="live-feed">
       {segments.map((s) => (
         <div key={s.id} className="live-line done">
-          <p className="live-target">{s.target}</p>
+          <p className="live-target">{firstVal(s.targets)}</p>
           {s.source && <p className="live-source">{s.source}</p>}
         </div>
       ))}
-      {(partialSource || partialTarget) && (
+      {hasPartial && (
         <div className="live-line current">
-          <p className="live-target">{partialTarget || "…"}</p>
+          <p className="live-target">{firstVal(partialTargets) || "…"}</p>
           {partialSource && <p className="live-source">{partialSource}</p>}
         </div>
       )}
