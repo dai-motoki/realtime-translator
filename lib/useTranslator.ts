@@ -12,41 +12,38 @@ export interface LangPair {
 
 export interface Segment {
   id: string;
-  /** Original (auto-detected) speech — may be refined in place */
   source: string;
-  /** Translated text in the output language — may be refined in place */
   target: string;
-  /** The untouched real-time transcription, kept so the optimizer always
-   *  re-edits from the raw text rather than from a previous refinement. */
   rawSource: string;
   rawTarget: string;
-  /** Output language code this segment was translated into */
   outputLang: string;
-  /** Detected language the source was spoken in (auto mode), else null */
   sourceLang: string | null;
-  /** Whether this segment's text has been refined by the post-pass model */
   refined?: boolean;
   at: number;
 }
 
-/** Shape of the JSON events that arrive over the `oai-events` data channel. */
 interface RealtimeEvent {
   type?: string;
   delta?: string;
   error?: { message?: string };
 }
 
+interface Session {
+  pc: RTCPeerConnection;
+  dc: RTCDataChannel;
+  outputLang: string;
+}
+
+const CLIENT_SECRET_URL = "/api/session";
 const CALLS_URL = "https://api.openai.com/v1/realtime/translations/calls";
 
 // The translation API has "no turn lifecycle" — it never tells us where an
-// utterance ends. So we segment the continuous transcript ourselves: a line is
-// finalized after this much silence (no new deltas), or immediately when the
-// spoken language switches (the other person started talking).
+// utterance ends. We segment ourselves: finalize after this much silence, or
+// immediately when the spoken language switches.
 const SEGMENT_GAP_MS = 1000;
 
 let segCounter = 0;
 
-/** Turn a getUserMedia failure into a clear, mobile-friendly Japanese message. */
 function micErrorMessage(err: unknown): string {
   const name = err instanceof DOMException ? err.name : "";
   if (name === "NotAllowedError" || name === "SecurityError") {
@@ -69,23 +66,19 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   const [partialTarget, setPartialTarget] = useState("");
   const [speaking, setSpeaking] = useState(false);
   const [muted, setMutedState] = useState(false);
-  const [outputLang, setOutputLang] = useState("en");
-  // Translated audio playback is OFF by default — text is the primary output,
-  // and keeping the speaker off avoids echo/feedback that disrupts mic VAD on phones.
   const [audioOn, setAudioOnState] = useState(false);
 
-  const pcRef = useRef<RTCPeerConnection | null>(null);
-  const dcRef = useRef<RTCDataChannel | null>(null);
+  const sessionsRef = useRef<Session[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const srcBuf = useRef("");
-  const tgtBuf = useRef("");
-  const outLangRef = useRef("en");
+  const outLangsRef = useRef<string[]>([]);
   const audioOnRef = useRef(false);
-  // When set, the translation direction is chosen automatically per utterance
-  // from the detected source language (no manual side switching).
-  const autoPairRef = useRef<LangPair | null>(null);
-  // Detected source language of the in-progress line, and the silence timer.
+
+  // Per-utterance buffers.
+  const srcBuf = useRef("");
+  const tgtBufs = useRef<Record<string, string>>({}); // by output language
   const segLangRef = useRef<string | null>(null);
+  const listenerLangRef = useRef<string | null>(null);
+  const autoPairRef = useRef<LangPair | null>(null);
   const gapTimerRef = useRef<number | null>(null);
 
   const clearGap = useCallback(() => {
@@ -98,52 +91,45 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   const finalize = useCallback(() => {
     clearGap();
     const source = srcBuf.current.trim();
-    const target = tgtBuf.current.trim();
     const lastSegLang = segLangRef.current;
+    const pair = autoPairRef.current;
+
+    let target = "";
+    let outputLang = outLangsRef.current[0] ?? "en";
+    let sourceLang: string | null = null;
+
+    if (pair) {
+      sourceLang =
+        detectPairLanguage(source, pair.a, pair.b) ?? lastSegLang ?? pair.a;
+      outputLang = sourceLang === pair.a ? pair.b : pair.a; // listener's language
+      target = (tgtBufs.current[outputLang] ?? "").trim();
+    } else {
+      outputLang = outLangsRef.current[0] ?? "en";
+      target = (tgtBufs.current[outputLang] ?? "").trim();
+    }
+
     srcBuf.current = "";
-    tgtBuf.current = "";
+    tgtBufs.current = {};
     segLangRef.current = null;
+    listenerLangRef.current = null;
     setPartialSource("");
     setPartialTarget("");
 
-    const pair = autoPairRef.current;
-    if (pair) {
-      // Auto two-way mode: the realtime model only transcribes (its output is a
-      // throw-away neutral language). Direction is decided purely from the
-      // detected SOURCE language, and the translation is produced by GPT later.
-      if (!source) return;
-      const sourceLang =
-        detectPairLanguage(source, pair.a, pair.b) ?? lastSegLang ?? pair.a;
-      const outputLang = sourceLang === pair.a ? pair.b : pair.a;
-      setSegments((prev) => [
-        ...prev,
-        {
-          id: `seg-${++segCounter}`,
-          source,
-          target: "", // filled by the GPT translation/optimize pass
-          rawSource: source,
-          rawTarget: "",
-          outputLang,
-          sourceLang,
-          at: Date.now(),
-        },
-      ]);
-    } else if (source || target) {
-      // Live (one-way) mode uses the realtime translation directly.
-      setSegments((prev) => [
-        ...prev,
-        {
-          id: `seg-${++segCounter}`,
-          source,
-          target,
-          rawSource: source,
-          rawTarget: target,
-          outputLang: outLangRef.current,
-          sourceLang: null,
-          at: Date.now(),
-        },
-      ]);
-    }
+    if (pair ? !source : !source && !target) return;
+
+    setSegments((prev) => [
+      ...prev,
+      {
+        id: `seg-${++segCounter}`,
+        source,
+        target,
+        rawSource: source,
+        rawTarget: target,
+        outputLang,
+        sourceLang,
+        at: Date.now(),
+      },
+    ]);
   }, [clearGap]);
 
   const scheduleGap = useCallback(() => {
@@ -156,18 +142,19 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   }, [clearGap, finalize]);
 
   const handleEvent = useCallback(
-    (evt: RealtimeEvent) => {
+    (evt: RealtimeEvent, lang: string, isPrimary: boolean) => {
       const type = evt.type ?? "";
+
       if (type.endsWith("input_transcript.delta")) {
+        // Both sessions transcribe the same audio — only the primary feeds the
+        // source, to avoid double-counting.
+        if (!isPrimary) return;
         const delta = evt.delta ?? "";
         const pair = autoPairRef.current;
         if (pair && delta) {
-          // Detect the language of this fragment. The source transcript is the
-          // spoken audio (independent of output language), so this is reliable.
           const dLang = detectPairLanguage(delta, pair.a, pair.b);
           if (dLang) {
-            // The other person started talking (language switched) → close the
-            // previous line so it becomes its own bubble.
+            // Other person started talking → close the previous line.
             if (
               segLangRef.current &&
               dLang !== segLangRef.current &&
@@ -176,6 +163,8 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
               finalize();
             }
             segLangRef.current = dLang;
+            listenerLangRef.current = dLang === pair.a ? pair.b : pair.a;
+            setPartialTarget(tgtBufs.current[listenerLangRef.current] ?? "");
           }
         }
         srcBuf.current += delta;
@@ -183,16 +172,20 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         setSpeaking(true);
         scheduleGap();
       } else if (type.endsWith("output_transcript.delta")) {
-        // In auto mode the realtime output is a throw-away neutral language —
-        // ignore it (GPT does the real translation). Live mode uses it directly.
-        if (!autoPairRef.current) {
-          tgtBuf.current += evt.delta ?? "";
-          setPartialTarget(tgtBuf.current);
-          scheduleGap();
+        const delta = evt.delta ?? "";
+        tgtBufs.current[lang] = (tgtBufs.current[lang] ?? "") + delta;
+        const pair = autoPairRef.current;
+        // Show the translation for the current listener (auto) / the only
+        // output (live).
+        if (!pair || lang === listenerLangRef.current) {
+          setPartialTarget(tgtBufs.current[lang]);
         }
+        scheduleGap();
       } else if (type.endsWith("session.closed")) {
-        finalize();
-        setSpeaking(false);
+        if (isPrimary) {
+          finalize();
+          setSpeaking(false);
+        }
       } else if (type === "error" || evt.error) {
         setError(evt.error?.message ?? "Realtime error");
       }
@@ -200,34 +193,6 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     [finalize, scheduleGap],
   );
 
-  const sendOutputLanguage = useCallback((lang: string) => {
-    const dc = dcRef.current;
-    if (dc && dc.readyState === "open") {
-      dc.send(
-        JSON.stringify({
-          type: "session.update",
-          session: { audio: { output: { language: lang } } },
-        }),
-      );
-    }
-  }, []);
-
-  const cleanup = useCallback(() => {
-    clearGap();
-    dcRef.current?.close();
-    dcRef.current = null;
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    pcRef.current?.close();
-    pcRef.current = null;
-    if (audioRef.current) audioRef.current.srcObject = null;
-    srcBuf.current = "";
-    tgtBuf.current = "";
-    segLangRef.current = null;
-  }, [audioRef, clearGap]);
-
-  // Reflect the current audio-output preference onto the <audio> element.
-  // Muted autoplay is always allowed; unmuting happens from a user gesture.
   const applyAudio = useCallback(() => {
     const el = audioRef.current;
     if (!el) return;
@@ -244,17 +209,33 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     [applyAudio],
   );
 
+  const cleanup = useCallback(() => {
+    clearGap();
+    for (const s of sessionsRef.current) {
+      try {
+        s.dc.close();
+      } catch {}
+      try {
+        s.pc.close();
+      } catch {}
+    }
+    sessionsRef.current = [];
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    if (audioRef.current) audioRef.current.srcObject = null;
+    srcBuf.current = "";
+    tgtBufs.current = {};
+    segLangRef.current = null;
+    listenerLangRef.current = null;
+  }, [audioRef, clearGap]);
+
   const start = useCallback(
-    async (initialOutputLang: string) => {
-      if (pcRef.current) return;
+    async (outputLangs: string[]) => {
+      if (sessionsRef.current.length) return;
       setError(null);
-      outLangRef.current = initialOutputLang;
-      setOutputLang(initialOutputLang);
+      outLangsRef.current = outputLangs;
       setMutedState(false);
 
-      // 1. Capture the microphone FIRST, synchronously inside the tap gesture.
-      //    iOS Safari revokes the user-activation after an unrelated await, so
-      //    getUserMedia must run before the token fetch or it silently fails.
       if (!navigator.mediaDevices?.getUserMedia) {
         setError(
           "このブラウザでは音声入力を利用できません。HTTPSのSafari/Chromeなど対応ブラウザで開いてください（アプリ内ブラウザでは動かないことがあります）。",
@@ -263,6 +244,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         return;
       }
       setStatus("connecting");
+
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -274,13 +256,11 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         });
       } catch (err) {
         const name = err instanceof DOMException ? err.name : "";
-        // Permission/security failures won't be fixed by relaxing constraints.
         if (name === "NotAllowedError" || name === "SecurityError") {
           setError(micErrorMessage(err));
           setStatus("error");
           return;
         }
-        // Some devices reject specific constraints — retry with the basics.
         try {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         } catch (err2) {
@@ -291,62 +271,50 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
       }
       streamRef.current = stream;
 
-      try {
-        // 2. Mint a single-use ephemeral secret from our own backend.
-        const tokenRes = await fetch("/api/session", {
+      const single = outputLangs.length === 1;
+
+      const buildSession = async (
+        lang: string,
+        isPrimary: boolean,
+      ): Promise<Session> => {
+        const tokenRes = await fetch(CLIENT_SECRET_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ outputLanguage: initialOutputLang }),
+          body: JSON.stringify({ outputLanguage: lang }),
         });
         const tokenData = (await tokenRes.json()) as {
           clientSecret?: string;
           error?: string;
         };
         if (!tokenRes.ok || !tokenData.clientSecret) {
-          throw new Error(tokenData.error ?? "Failed to start a session.");
+          throw new Error(tokenData.error ?? "セッションの開始に失敗しました。");
         }
 
-        // 3. Build the peer connection.
         const pc = new RTCPeerConnection();
-        pcRef.current = pc;
-
-        pc.ontrack = (e) => {
-          const el = audioRef.current;
-          if (el) {
-            el.srcObject = e.streams[0];
-            applyAudio();
-          }
-        };
-        pc.onconnectionstatechange = () => {
-          const st = pc.connectionState;
-          if (st === "failed") {
-            setError("Connection lost.");
-            setStatus("error");
-          }
-        };
-
-        for (const track of stream.getAudioTracks()) {
-          pc.addTrack(track, stream);
+        // Only play translated audio when there's a single output (live mode);
+        // in two-way mode there are two competing outputs, so audio stays off.
+        if (single) {
+          pc.ontrack = (e) => {
+            const el = audioRef.current;
+            if (el) {
+              el.srcObject = e.streams[0];
+              applyAudio();
+            }
+          };
         }
+        for (const track of stream.getAudioTracks()) pc.addTrack(track, stream);
 
         const dc = pc.createDataChannel("oai-events");
-        dcRef.current = dc;
         dc.onmessage = (e) => {
           try {
-            handleEvent(JSON.parse(e.data as string) as RealtimeEvent);
+            handleEvent(JSON.parse(e.data as string) as RealtimeEvent, lang, isPrimary);
           } catch {
             // ignore non-JSON frames
           }
         };
-        dc.onopen = () => {
-          sendOutputLanguage(initialOutputLang);
-          setStatus("live");
-        };
 
-        // 4. Offer / answer SDP exchange with the translation endpoint.
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-
         const sdpRes = await fetch(CALLS_URL, {
           method: "POST",
           headers: {
@@ -358,29 +326,29 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         if (!sdpRes.ok) {
           const txt = await sdpRes.text();
           throw new Error(
-            `Translation handshake failed (${sdpRes.status}). ${txt.slice(0, 160)}`,
+            `翻訳の接続に失敗しました (${sdpRes.status})。${txt.slice(0, 120)}`,
           );
         }
         await pc.setRemoteDescription({
           type: "answer",
           sdp: await sdpRes.text(),
         });
+        return { pc, dc, outputLang: lang };
+      };
+
+      try {
+        const sessions = await Promise.all(
+          outputLangs.map((lang, i) => buildSession(lang, i === 0)),
+        );
+        sessionsRef.current = sessions;
+        setStatus("live");
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setStatus("error");
         cleanup();
       }
     },
-    [audioRef, handleEvent, sendOutputLanguage, cleanup, applyAudio],
-  );
-
-  const setOutputLanguage = useCallback(
-    (lang: string) => {
-      outLangRef.current = lang;
-      setOutputLang(lang);
-      sendOutputLanguage(lang);
-    },
-    [sendOutputLanguage],
+    [audioRef, applyAudio, handleEvent, cleanup],
   );
 
   const setMuted = useCallback((m: boolean) => {
@@ -389,7 +357,6 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     setMutedState(m);
   }, []);
 
-  // Enable/disable automatic two-way direction for the given language pair.
   const setAutoPair = useCallback((pair: LangPair | null) => {
     autoPairRef.current = pair;
   }, []);
@@ -404,7 +371,6 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
 
   const clear = useCallback(() => setSegments([]), []);
 
-  // Replace fields of a finalized segment (used by the GPT refinement pass).
   const patchSegment = useCallback((id: string, patch: Partial<Segment>) => {
     setSegments((prev) =>
       prev.map((s) => (s.id === id ? { ...s, ...patch } : s)),
@@ -419,11 +385,9 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     partialTarget,
     speaking,
     muted,
-    outputLang,
     audioOn,
     start,
     stop,
-    setOutputLanguage,
     setMuted,
     setAudioOn,
     setAutoPair,

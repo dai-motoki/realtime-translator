@@ -69,14 +69,6 @@ export default function Translator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, langA, langB]);
 
-  // Keep the live-mode output language in sync when it changes mid-session.
-  useEffect(() => {
-    if (mode === "live" && t.status === "live") {
-      t.setOutputLanguage(targetLang);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetLang]);
-
   // Read the current mic permission on mount so we can warn before the first tap.
   useEffect(() => {
     let alive = true;
@@ -191,19 +183,13 @@ export default function Translator() {
     [mode, t],
   );
 
-  // Conversation: one tap starts a single session; direction is automatic.
+  // Conversation: two realtime sessions (one per language) run at once so BOTH
+  // directions are translated live; we show the one going away from the speaker.
   const onConvToggle = useCallback(async () => {
     if (t.status === "idle" || t.status === "error") {
       void enableOrientation();
       t.setAutoPair({ a: langA, b: langB });
-      // Set the realtime output to a language NEITHER speaker uses, so the model
-      // always does a genuine translation and emits a clean source transcript
-      // for both languages. We ignore that output and translate with GPT.
-      const neutral =
-        ["de", "fr", "es", "ko", "ru", "nl", "zh"].find(
-          (c) => c !== langA && c !== langB,
-        ) ?? "de";
-      await t.start(neutral);
+      await t.start([langA, langB]);
     } else {
       t.stop();
     }
@@ -211,7 +197,8 @@ export default function Translator() {
 
   const onLiveToggle = useCallback(async () => {
     if (t.status === "idle" || t.status === "error") {
-      await t.start(targetLang);
+      t.setAutoPair(null);
+      await t.start([targetLang]);
     } else {
       t.stop();
     }
