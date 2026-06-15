@@ -463,32 +463,38 @@ select {
   color: #14141c;
   border-bottom-left-radius: 5px;
 }
-.msg-orig {
+.msg-main {
   font-size: 16px;
   line-height: 1.45;
-  font-weight: 550;
+  font-weight: 600;
   word-break: break-word;
 }
-.msg-trans {
+.msg-sub {
   margin-top: 7px;
   padding-top: 7px;
   border-top: 1px solid rgba(0, 0, 0, 0.12);
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1.45;
   word-break: break-word;
 }
-.msg.a .msg-trans {
+.msg.a .msg-sub {
   border-top-color: rgba(255, 255, 255, 0.3);
-  color: rgba(255, 255, 255, 0.92);
+  color: rgba(255, 255, 255, 0.82);
 }
-.msg.b .msg-trans {
+.msg.b .msg-sub {
   border-top-color: rgba(0, 0, 0, 0.1);
-  color: #2f63d6;
+  color: #5b6470;
+}
+.msg-badge {
+  margin-left: 6px;
+  font-size: 12px;
+  vertical-align: middle;
+  opacity: 0.9;
 }
 .msg.pending .msg-bubble {
   opacity: 0.92;
 }
-.msg.pending .msg-orig::after {
+.msg.pending .msg-main::after {
   content: "";
   display: inline-block;
   width: 6px;

@@ -81,6 +81,41 @@ export default function Translator() {
     };
   }, []);
 
+  // Post-pass refinement: once a line is finalized, send the whole conversation
+  // history (both transcription and translation) to a normal model (GPT-5.5) to
+  // fix real-time recognition/translation glitches, then swap the bubble in place.
+  const refineTried = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (let i = 0; i < t.segments.length; i++) {
+      const seg = t.segments[i];
+      if (seg.refined || refineTried.current.has(seg.id)) continue;
+      refineTried.current.add(seg.id);
+      const history = t.segments
+        .slice(0, i)
+        .map((s) => ({ source: s.source, target: s.target }));
+      fetch("/api/refine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          history,
+          current: { source: seg.source, target: seg.target },
+          sourceLang: seg.sourceLang,
+          targetLang: seg.outputLang,
+        }),
+      })
+        .then((r) => r.json())
+        .then((d: { source?: string; target?: string }) => {
+          t.patchSegment(seg.id, {
+            source: typeof d?.source === "string" ? d.source : seg.source,
+            target: typeof d?.target === "string" ? d.target : seg.target,
+            refined: true,
+          });
+        })
+        .catch(() => t.patchSegment(seg.id, { refined: true }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t.segments]);
+
   const switchMode = useCallback(
     (next: Mode) => {
       if (next === mode) return;
@@ -372,6 +407,7 @@ function ChatTranscript({
             srcLang={src}
             original={s.source}
             translated={s.target}
+            refined={s.refined}
           />
         );
       })}
@@ -394,12 +430,14 @@ function ChatMsg({
   original,
   translated,
   pending,
+  refined,
 }: {
   side: "a" | "b";
   srcLang: string;
   original: string;
   translated: string;
   pending?: boolean;
+  refined?: boolean;
 }) {
   const lang = getLanguage(srcLang);
   return (
@@ -408,8 +446,16 @@ function ChatMsg({
         {lang.flag}
       </span>
       <div className="msg-bubble">
-        <p className="msg-orig">{original || "…"}</p>
-        {translated && <p className="msg-trans">{translated}</p>}
+        {/* translation on top, transcription (original) below */}
+        <p className="msg-main">
+          {translated || "…"}
+          {refined && (
+            <span className="msg-badge" title="GPT-5.5で最適化済み">
+              ✨
+            </span>
+          )}
+        </p>
+        {original && <p className="msg-sub">{original}</p>}
       </div>
     </div>
   );

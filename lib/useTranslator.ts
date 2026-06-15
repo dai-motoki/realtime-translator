@@ -20,6 +20,8 @@ export interface Segment {
   outputLang: string;
   /** Detected language the source was spoken in (auto mode), else null */
   sourceLang: string | null;
+  /** Whether this segment's text has been refined by the post-pass model */
+  refined?: boolean;
   at: number;
 }
 
@@ -356,6 +358,13 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
 
   const clear = useCallback(() => setSegments([]), []);
 
+  // Replace fields of a finalized segment (used by the GPT refinement pass).
+  const patchSegment = useCallback((id: string, patch: Partial<Segment>) => {
+    setSegments((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    );
+  }, []);
+
   return {
     status,
     error,
@@ -373,5 +382,6 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     setAudioOn,
     setAutoPair,
     clear,
+    patchSegment,
   };
 }
