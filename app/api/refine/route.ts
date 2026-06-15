@@ -9,26 +9,18 @@ const MODEL = process.env.REFINE_MODEL || "gpt-5.5";
 interface Line {
   source: string;
   target: string;
+  sourceLang?: string | null;
+  targetLang?: string | null;
 }
 interface RefineBody {
-  history?: Line[];
-  current?: Line;
-  sourceLang?: string | null;
-  targetLang?: string;
+  lines?: Line[];
 }
 
-const SYSTEM = `You are a meticulous editor for a live, two-way interpreted conversation. The transcription and machine translation below were produced in real time and may contain speech-recognition mistakes, wrong word boundaries, dropped words, or awkward phrasing.
+const SYSTEM = `You are a meticulous editor for a live, two-way interpreted conversation. Below is the ENTIRE conversation as captured in real time. Each line has a raw transcription ("source", in the language it was spoken) and a raw machine translation ("target"). These can contain speech-recognition mistakes, wrong word boundaries, dropped words, numbers/names heard wrong, or awkward phrasing.
 
-You are given the conversation so far (for context) and the latest line's raw transcription ("source", in the spoken language) and its machine translation ("target").
+Re-edit the WHOLE conversation using the full context. For EACH line, output the corrected transcription and the most natural, accurate translation, keeping terminology, names, numbers, pronouns and tone consistent across the entire conversation.
 
-Return a corrected, natural version of ONLY the latest line as strict JSON:
-{"source":"<corrected transcription, in the SAME language as the input source — do NOT translate it>","target":"<the most natural, accurate translation of the corrected source into the target language, consistent with the conversation's terminology, names, numbers and tone>"}
-
-Rules:
-- Use the conversation context to fix homophones, names, numbers, and missing words.
-- Keep "source" in its original spoken language; keep "target" in the target language.
-- If the line is already fine, return it as-is.
-- Output JSON only, no commentary.`;
+Return STRICT JSON of the form {"lines":[{"source":"...","target":"..."}, ...]} with EXACTLY the same number of lines, in the same order as given. For each line keep "source" in its original spoken language (do NOT translate it) and put the translation in "target" in that line's target language. If a line is already correct, return it unchanged. Output JSON only, no commentary.`;
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -37,38 +29,29 @@ export async function POST(request: NextRequest) {
   try {
     body = (await request.json()) as RefineBody;
   } catch {
-    // fall through with empty body
+    // fall through
   }
-  const current = body.current ?? { source: "", target: "" };
+  const lines = Array.isArray(body.lines) ? body.lines : [];
 
-  // Graceful no-op: if we can't refine, return the original so the UI keeps
-  // the real-time text instead of breaking.
+  // Graceful no-op: return the input lines unchanged so the UI keeps its text.
   const fallback = () =>
-    Response.json({ source: current.source, target: current.target });
+    Response.json({
+      lines: lines.map((l) => ({ source: l.source, target: l.target })),
+    });
 
-  if (!apiKey || (!current.source && !current.target)) {
-    return fallback();
-  }
+  if (!apiKey || lines.length === 0) return fallback();
 
-  const history = (body.history ?? [])
-    .slice(-20)
-    .map(
-      (l, i) =>
-        `${i + 1}. [${l.source ?? ""}] => [${l.target ?? ""}]`,
+  const convo = lines
+    .map((l, i) =>
+      [
+        `#${i + 1} (${l.sourceLang ?? "auto"} -> ${l.targetLang ?? "?"})`,
+        `  source: ${JSON.stringify(l.source ?? "")}`,
+        `  target: ${JSON.stringify(l.target ?? "")}`,
+      ].join("\n"),
     )
     .join("\n");
 
-  const userMsg = [
-    `Source language: ${body.sourceLang ?? "auto-detect"}`,
-    `Target language: ${body.targetLang ?? "unknown"}`,
-    "",
-    "Conversation so far:",
-    history || "(none)",
-    "",
-    "Latest line (raw, to correct):",
-    `source: ${JSON.stringify(current.source)}`,
-    `target: ${JSON.stringify(current.target)}`,
-  ].join("\n");
+  const userMsg = `Conversation (${lines.length} lines):\n${convo}\n\nReturn {"lines":[...]} with exactly ${lines.length} items in the same order.`;
 
   try {
     const res = await fetch(CHAT_URL, {
@@ -94,17 +77,25 @@ export async function POST(request: NextRequest) {
     const content = extractContent(data);
     if (!content) return fallback();
 
-    let parsed: { source?: unknown; target?: unknown };
+    let parsed: { lines?: unknown };
     try {
       parsed = JSON.parse(content);
     } catch {
       return fallback();
     }
 
-    return Response.json({
-      source: typeof parsed.source === "string" ? parsed.source : current.source,
-      target: typeof parsed.target === "string" ? parsed.target : current.target,
+    const out = parsed.lines;
+    if (!Array.isArray(out) || out.length !== lines.length) return fallback();
+
+    // Merge defensively: keep the original where the model omitted a field.
+    const merged = lines.map((orig, i) => {
+      const r = out[i] as { source?: unknown; target?: unknown } | undefined;
+      return {
+        source: typeof r?.source === "string" ? r.source : orig.source,
+        target: typeof r?.target === "string" ? r.target : orig.target,
+      };
     });
+    return Response.json({ lines: merged });
   } catch {
     return fallback();
   }

@@ -18,6 +18,7 @@ import {
 } from "@/lib/platform";
 
 type Mode = "talk" | "live";
+type RefinedLine = { source?: string; target?: string };
 
 // Browser-only platform detection, exposed via useSyncExternalStore so it stays
 // SSR-safe (server snapshot = null) without a hydration mismatch.
@@ -47,6 +48,12 @@ export default function Translator() {
     () => null,
   );
   const [micPerm, setMicPerm] = useState<MicPermission>("unknown");
+  const [optimizing, setOptimizing] = useState(false);
+
+  // Flip the whole UI 180° so the person across the table can read it. Driven
+  // either manually or, when granted, by the device's tilt sensor.
+  const [flipped, setFlipped] = useState(false);
+  const [orientOn, setOrientOn] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -81,40 +88,99 @@ export default function Translator() {
     };
   }, []);
 
-  // Post-pass refinement: once a line is finalized, send the whole conversation
-  // history (both transcription and translation) to a normal model (GPT-5.5) to
-  // fix real-time recognition/translation glitches, then swap the bubble in place.
-  const refineTried = useRef<Set<string>>(new Set());
+  // Post-pass optimization: every time a NEW line is finalized, re-optimize the
+  // WHOLE conversation from the raw real-time text (both transcription and
+  // translation), using GPT-5.5 with full context, then swap every bubble.
+  const segsRef = useRef(t.segments);
   useEffect(() => {
-    for (let i = 0; i < t.segments.length; i++) {
-      const seg = t.segments[i];
-      if (seg.refined || refineTried.current.has(seg.id)) continue;
-      refineTried.current.add(seg.id);
-      const history = t.segments
-        .slice(0, i)
-        .map((s) => ({ source: s.source, target: s.target }));
-      fetch("/api/refine", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          history,
-          current: { source: seg.source, target: seg.target },
-          sourceLang: seg.sourceLang,
-          targetLang: seg.outputLang,
-        }),
-      })
-        .then((r) => r.json())
-        .then((d: { source?: string; target?: string }) => {
-          t.patchSegment(seg.id, {
-            source: typeof d?.source === "string" ? d.source : seg.source,
-            target: typeof d?.target === "string" ? d.target : seg.target,
+    segsRef.current = t.segments;
+  }, [t.segments]);
+
+  const optRunning = useRef(false);
+
+  const runOptimize = useCallback(async () => {
+    if (optRunning.current) return;
+    optRunning.current = true;
+    setOptimizing(true);
+    try {
+      let lastLen = -1;
+      // Loop so that lines finalized *during* a request get re-optimized too.
+      while (segsRef.current.length !== lastLen && segsRef.current.length > 0) {
+        const snapshot = segsRef.current;
+        lastLen = snapshot.length;
+        const lines = snapshot.map((s) => ({
+          source: s.rawSource,
+          target: s.rawTarget,
+          sourceLang: s.sourceLang,
+          targetLang: s.outputLang,
+        }));
+        let out: RefinedLine[] | null = null;
+        try {
+          const res = await fetch("/api/refine", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lines }),
+          });
+          const data = (await res.json()) as { lines?: RefinedLine[] };
+          if (Array.isArray(data.lines) && data.lines.length === snapshot.length) {
+            out = data.lines;
+          }
+        } catch {
+          out = null;
+        }
+        snapshot.forEach((s, i) => {
+          const r = out?.[i];
+          t.patchSegment(s.id, {
+            source: typeof r?.source === "string" ? r.source : s.source,
+            target: typeof r?.target === "string" ? r.target : s.target,
             refined: true,
           });
-        })
-        .catch(() => t.patchSegment(seg.id, { refined: true }));
+        });
+      }
+    } finally {
+      optRunning.current = false;
+      setOptimizing(false);
     }
+  }, [t]);
+
+  useEffect(() => {
+    if (t.segments.length > 0) void runOptimize();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t.segments]);
+  }, [t.segments.length]);
+
+  // Ask for tilt-sensor access (iOS needs a gesture) and turn on auto-flip.
+  const enableOrientation = useCallback(async () => {
+    if (orientOn) return;
+    try {
+      const D = window.DeviceOrientationEvent as unknown as {
+        requestPermission?: () => Promise<"granted" | "denied">;
+      };
+      if (D && typeof D.requestPermission === "function") {
+        const r = await D.requestPermission();
+        if (r !== "granted") return;
+      }
+      setOrientOn(true);
+    } catch {
+      // sensor not available — manual flip button still works
+    }
+  }, [orientOn]);
+
+  // Auto-flip when the phone is tilted toward the other person (wide hysteresis
+  // so it doesn't flip-flop), once the sensor is enabled.
+  useEffect(() => {
+    if (!orientOn) return;
+    const onOrient = (e: DeviceOrientationEvent) => {
+      const beta = e.beta;
+      if (beta == null) return;
+      setFlipped((prev) => {
+        if (!prev && beta < 25) return true;
+        if (prev && beta > 55) return false;
+        return prev;
+      });
+    };
+    window.addEventListener("deviceorientation", onOrient);
+    return () => window.removeEventListener("deviceorientation", onOrient);
+  }, [orientOn]);
 
   const switchMode = useCallback(
     (next: Mode) => {
@@ -128,12 +194,13 @@ export default function Translator() {
   // Conversation: one tap starts a single session; direction is automatic.
   const onConvToggle = useCallback(async () => {
     if (t.status === "idle" || t.status === "error") {
+      void enableOrientation();
       t.setAutoPair({ a: langA, b: langB });
       await t.start(langB);
     } else {
       t.stop();
     }
-  }, [t, langA, langB]);
+  }, [t, langA, langB, enableOrientation]);
 
   const onLiveToggle = useCallback(async () => {
     if (t.status === "idle" || t.status === "error") {
@@ -171,13 +238,15 @@ export default function Translator() {
         : "翻訳をはじめる";
 
   return (
-    <div className="app">
+    <div className={`app${flipped ? " flipped" : ""}`}>
       <audio ref={audioRef} autoPlay playsInline />
 
       <header className="topbar">
         <div className="brand">
           <span className="brand-dot" data-status={t.status} />
-          <span className="brand-name">Realtime Translate</span>
+          <span className="brand-name">
+            {optimizing ? "✨ 全文を最適化中…" : "Realtime Translate"}
+          </span>
         </div>
         <div className="seg">
           <button
@@ -252,6 +321,15 @@ export default function Translator() {
           >
             <span className="audio-ico">{t.audioOn ? "🔊" : "🔇"}</span>
             音声出力 {t.audioOn ? "ON" : "OFF"}
+          </button>
+          <button
+            className={`audio-toggle flip ${flipped ? "on" : ""}`}
+            onClick={() => setFlipped((v) => !v)}
+            aria-pressed={flipped}
+            title="相手に見せる（画面を上下反転）"
+          >
+            <span className="audio-ico">🔄</span>
+            相手向き
           </button>
           {t.segments.length > 0 && (
             <button className="ghost" onClick={t.clear}>

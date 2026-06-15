@@ -65,6 +65,11 @@ select {
     radial-gradient(120% 60% at 50% -10%, rgba(108, 140, 255, 0.16), transparent 60%),
     radial-gradient(90% 50% at 100% 110%, rgba(160, 107, 255, 0.12), transparent 55%),
     var(--bg);
+  transition: transform 0.35s ease;
+}
+/* Show the conversation to the person sitting across the table. */
+.app.flipped {
+  transform: rotate(180deg);
 }
 
 /* ---------------- Top bar ---------------- */
@@ -672,16 +677,16 @@ select {
 
 .options {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 8px 10px;
   margin-bottom: 12px;
 }
 .audio-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  margin-right: auto;
-  padding: 8px 14px;
+  gap: 6px;
+  padding: 8px 13px;
   font-size: 13px;
   font-weight: 650;
   color: var(--fg-dim);
@@ -689,6 +694,17 @@ select {
   border: 1px solid var(--line);
   border-radius: 999px;
   transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.audio-toggle.flip.on {
+  color: #fff;
+  background: linear-gradient(180deg, var(--accent-2), #8b54f0);
+  border-color: transparent;
+}
+.options .ghost {
+  margin-left: auto;
+}
+.options .ghost ~ .ghost {
+  margin-left: 0;
 }
 .audio-toggle .audio-ico {
   font-size: 15px;

@@ -12,10 +12,14 @@ export interface LangPair {
 
 export interface Segment {
   id: string;
-  /** Original (auto-detected) speech */
+  /** Original (auto-detected) speech — may be refined in place */
   source: string;
-  /** Translated text in the output language */
+  /** Translated text in the output language — may be refined in place */
   target: string;
+  /** The untouched real-time transcription, kept so the optimizer always
+   *  re-edits from the raw text rather than from a previous refinement. */
+  rawSource: string;
+  rawTarget: string;
   /** Output language code this segment was translated into */
   outputLang: string;
   /** Detected language the source was spoken in (auto mode), else null */
@@ -33,6 +37,12 @@ interface RealtimeEvent {
 }
 
 const CALLS_URL = "https://api.openai.com/v1/realtime/translations/calls";
+
+// The translation API has "no turn lifecycle" — it never tells us where an
+// utterance ends. So we segment the continuous transcript ourselves: a line is
+// finalized after this much silence (no new deltas), or immediately when the
+// spoken language switches (the other person started talking).
+const SEGMENT_GAP_MS = 1400;
 
 let segCounter = 0;
 
@@ -74,12 +84,24 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   // When set, the translation direction is chosen automatically per utterance
   // from the detected source language (no manual side switching).
   const autoPairRef = useRef<LangPair | null>(null);
+  // Detected source language of the in-progress line, and the silence timer.
+  const segLangRef = useRef<string | null>(null);
+  const gapTimerRef = useRef<number | null>(null);
+
+  const clearGap = useCallback(() => {
+    if (gapTimerRef.current != null) {
+      clearTimeout(gapTimerRef.current);
+      gapTimerRef.current = null;
+    }
+  }, []);
 
   const finalize = useCallback(() => {
+    clearGap();
     const source = srcBuf.current.trim();
     const target = tgtBuf.current.trim();
     srcBuf.current = "";
     tgtBuf.current = "";
+    segLangRef.current = null;
     setPartialSource("");
     setPartialTarget("");
     if (source || target) {
@@ -96,28 +118,47 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
           id: `seg-${++segCounter}`,
           source,
           target,
+          rawSource: source,
+          rawTarget: target,
           outputLang: outLangRef.current,
           sourceLang,
           at: Date.now(),
         },
       ]);
     }
-  }, []);
+  }, [clearGap]);
+
+  const scheduleGap = useCallback(() => {
+    clearGap();
+    gapTimerRef.current = window.setTimeout(() => {
+      gapTimerRef.current = null;
+      finalize();
+      setSpeaking(false);
+    }, SEGMENT_GAP_MS);
+  }, [clearGap, finalize]);
 
   const handleEvent = useCallback(
     (evt: RealtimeEvent) => {
       const type = evt.type ?? "";
       if (type.endsWith("input_transcript.delta")) {
-        srcBuf.current += evt.delta ?? "";
-        setPartialSource(srcBuf.current);
-        // Auto direction: the source transcript streams while the speaker is
-        // still talking — before the translation starts — so we can detect the
-        // spoken language and flip the output language in time.
+        const delta = evt.delta ?? "";
         const pair = autoPairRef.current;
-        if (pair) {
-          const src = detectPairLanguage(srcBuf.current, pair.a, pair.b);
-          if (src) {
-            const other = src === pair.a ? pair.b : pair.a;
+        if (pair && delta) {
+          // Detect the language of this fragment. The source transcript is the
+          // spoken audio (independent of output language), so this is reliable.
+          const dLang = detectPairLanguage(delta, pair.a, pair.b);
+          if (dLang) {
+            // The other person started talking → close the previous line first.
+            if (
+              segLangRef.current &&
+              dLang !== segLangRef.current &&
+              srcBuf.current.trim()
+            ) {
+              finalize();
+            }
+            segLangRef.current = dLang;
+            // Flip the output to the listener's language before translation runs.
+            const other = dLang === pair.a ? pair.b : pair.a;
             if (other !== outLangRef.current) {
               outLangRef.current = other;
               const dc = dcRef.current;
@@ -132,28 +173,22 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
             }
           }
         }
+        srcBuf.current += delta;
+        setPartialSource(srcBuf.current);
+        setSpeaking(true);
+        scheduleGap();
       } else if (type.endsWith("output_transcript.delta")) {
         tgtBuf.current += evt.delta ?? "";
         setPartialTarget(tgtBuf.current);
-      } else if (
-        type.endsWith("output_transcript.done") ||
-        type.endsWith("output_transcript.completed") ||
-        type.endsWith("input_transcript.done") ||
-        type.endsWith("output_audio.done") ||
-        type === "response.done"
-      ) {
+        scheduleGap();
+      } else if (type.endsWith("session.closed")) {
         finalize();
-      } else if (type === "input_audio_buffer.speech_started") {
-        // A new utterance is starting — flush anything still pending.
-        finalize();
-        setSpeaking(true);
-      } else if (type === "input_audio_buffer.speech_stopped") {
         setSpeaking(false);
       } else if (type === "error" || evt.error) {
         setError(evt.error?.message ?? "Realtime error");
       }
     },
-    [finalize],
+    [finalize, scheduleGap],
   );
 
   const sendOutputLanguage = useCallback((lang: string) => {
@@ -169,6 +204,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   }, []);
 
   const cleanup = useCallback(() => {
+    clearGap();
     dcRef.current?.close();
     dcRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -178,7 +214,8 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     if (audioRef.current) audioRef.current.srcObject = null;
     srcBuf.current = "";
     tgtBuf.current = "";
-  }, [audioRef]);
+    segLangRef.current = null;
+  }, [audioRef, clearGap]);
 
   // Reflect the current audio-output preference onto the <audio> element.
   // Muted autoplay is always allowed; unmuting happens from a user gesture.
