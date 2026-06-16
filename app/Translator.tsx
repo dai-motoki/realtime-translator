@@ -14,6 +14,7 @@ import {
   detectLanguageByOutputs,
 } from "@/lib/languages";
 import { useTranslator, type Segment } from "@/lib/useTranslator";
+import { useSpeech } from "@/lib/useSpeech";
 import { Typewriter } from "./Typewriter";
 import {
   detectPlatform,
@@ -42,6 +43,8 @@ const noopSubscribe = () => () => {};
 export default function Translator() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const t = useTranslator(audioRef);
+  // On-demand text-to-speech: tap any finalized line to hear it spoken.
+  const speech = useSpeech();
 
   const [mode, setMode] = useState<Mode>("talk");
 
@@ -311,6 +314,7 @@ export default function Translator() {
             convLangs={convLangs}
             partialSource={t.partialSource}
             partialTargets={t.partialTargets}
+            speech={speech}
           />
         ) : (
           <LiveTranscript
@@ -318,6 +322,7 @@ export default function Translator() {
             partialSource={t.partialSource}
             partialTargets={t.partialTargets}
             live={live}
+            speech={speech}
           />
         )}
       </main>
@@ -494,16 +499,47 @@ function LangSelect({
 
 type ChatTarget = { lang: string; text: string };
 
+type Speech = ReturnType<typeof useSpeech>;
+
+/** A small 🔊 button that speaks one line of text on demand. */
+function SpeakButton({
+  speech,
+  spKey,
+  text,
+  lang,
+}: {
+  speech: Speech;
+  spKey: string;
+  text: string;
+  lang?: string;
+}) {
+  const loading = speech.loadingKey === spKey;
+  const playing = speech.playingKey === spKey;
+  return (
+    <button
+      type="button"
+      className={`speak-btn${playing ? " playing" : ""}`}
+      aria-label={playing ? "停止" : "読み上げ"}
+      aria-pressed={playing}
+      onClick={() => speech.speak(spKey, text, lang)}
+    >
+      {loading ? "…" : playing ? "⏸" : "🔊"}
+    </button>
+  );
+}
+
 function ChatTranscript({
   segments,
   convLangs,
   partialSource,
   partialTargets,
+  speech,
 }: {
   segments: Segment[];
   convLangs: string[];
   partialSource: string;
   partialTargets: Record<string, string>;
+  speech: Speech;
 }) {
   const hasPartial =
     !!partialSource || Object.keys(partialTargets).length > 0;
@@ -540,6 +576,8 @@ function ChatTranscript({
             original={s.source}
             targets={targetsOf(src, s.targets, false)}
             refined={s.refined}
+            speech={speech}
+            speakKey={s.id}
           />
         );
       })}
@@ -573,6 +611,8 @@ function ChatMsg({
   targets,
   pending,
   refined,
+  speech,
+  speakKey,
 }: {
   side: "a" | "b";
   srcLang: string;
@@ -580,8 +620,12 @@ function ChatMsg({
   targets: ChatTarget[];
   pending?: boolean;
   refined?: boolean;
+  speech?: Speech;
+  speakKey?: string;
 }) {
   const lang = getLanguage(srcLang);
+  // Speak buttons appear only on finalized lines (not the streaming bubble).
+  const canSpeak = !pending && !!speech && !!speakKey;
   return (
     <div className={`msg ${side}${pending ? " pending" : ""}`}>
       <span className="msg-avatar" aria-hidden>
@@ -604,6 +648,14 @@ function ChatMsg({
               ✨
             </span>
           )}
+          {canSpeak && original && (
+            <SpeakButton
+              speech={speech}
+              spKey={`${speakKey}:src`}
+              text={original}
+              lang={srcLang}
+            />
+          )}
         </p>
         {targets.map((tg) => (
           <p key={tg.lang} className="msg-trans">
@@ -619,6 +671,14 @@ function ChatMsg({
             ) : (
               "…"
             )}
+            {canSpeak && tg.text && (
+              <SpeakButton
+                speech={speech}
+                spKey={`${speakKey}:${tg.lang}`}
+                text={tg.text}
+                lang={tg.lang}
+              />
+            )}
           </p>
         ))}
       </div>
@@ -633,13 +693,16 @@ function LiveTranscript({
   partialSource,
   partialTargets,
   live,
+  speech,
 }: {
   segments: Segment[];
   partialSource: string;
   partialTargets: Record<string, string>;
   live: boolean;
+  speech: Speech;
 }) {
   const firstVal = (m: Record<string, string>) => Object.values(m)[0] ?? "";
+  const firstKey = (m: Record<string, string>) => Object.keys(m)[0];
   const hasPartial =
     !!partialSource || Object.keys(partialTargets).length > 0;
   if (segments.length === 0 && !hasPartial) {
@@ -656,12 +719,36 @@ function LiveTranscript({
   }
   return (
     <div className="live-feed">
-      {segments.map((s) => (
-        <div key={s.id} className="live-line done">
-          <p className="live-target">{firstVal(s.targets)}</p>
-          {s.source && <p className="live-source">{s.source}</p>}
-        </div>
-      ))}
+      {segments.map((s) => {
+        const tgtText = firstVal(s.targets);
+        const tgtLang = firstKey(s.targets);
+        return (
+          <div key={s.id} className="live-line done">
+            <p className="live-target">
+              {tgtText}
+              {tgtText && (
+                <SpeakButton
+                  speech={speech}
+                  spKey={`${s.id}:tgt`}
+                  text={tgtText}
+                  lang={tgtLang}
+                />
+              )}
+            </p>
+            {s.source && (
+              <p className="live-source">
+                {s.source}
+                <SpeakButton
+                  speech={speech}
+                  spKey={`${s.id}:src`}
+                  text={s.source}
+                  lang={s.sourceLang ?? undefined}
+                />
+              </p>
+            )}
+          </div>
+        );
+      })}
       {hasPartial &&
         (() => {
           const tgt = firstVal(partialTargets);

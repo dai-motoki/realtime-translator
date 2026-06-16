@@ -583,6 +583,48 @@ select {
   vertical-align: middle;
   opacity: 0.9;
 }
+
+/* Tap-to-speak button on each finalized line. */
+.speak-btn {
+  margin-left: 7px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  vertical-align: middle;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(127, 127, 127, 0.16);
+  border: 1px solid rgba(127, 127, 127, 0.22);
+  opacity: 0.72;
+  transition: opacity 0.15s, transform 0.1s, background 0.15s;
+}
+.msg-trans .speak-btn {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: auto;
+}
+.speak-btn:hover {
+  opacity: 1;
+}
+.speak-btn:active {
+  transform: scale(0.9);
+}
+.speak-btn.playing {
+  opacity: 1;
+  background: var(--accent-2, #7c5cff);
+  border-color: transparent;
+}
+.msg.a .speak-btn {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+.live-source .speak-btn,
+.live-target .speak-btn {
+  margin-left: 8px;
+}
 .msg.pending .msg-bubble {
   opacity: 0.92;
 }
