@@ -8,6 +8,7 @@ import {
   useStudy,
   vocabKey,
   grammarKey,
+  exampleList,
   type StudyLine,
   type VocabItem,
   type GrammarItem,
@@ -348,13 +349,31 @@ function VocabCard({
       ) : (
         <p className="vcard-meaning">{item.meaning}</p>
       )}
-      {item.example && !hiddenMeaning && (
-        <p className="vcard-example">“{item.example}”</p>
-      )}
-      {item.exampleLocal && !hiddenMeaning && (
-        <p className="vcard-example-local">{item.exampleLocal}</p>
-      )}
+      {!hiddenMeaning && <Examples item={item} />}
     </div>
+  );
+}
+
+// Renders every example sentence kept for an item, each paired with its own
+// translation so the original and the translation always stay in sync.
+function Examples({
+  item,
+  variant = "vcard",
+}: {
+  item: VocabItem | GrammarItem;
+  variant?: "vcard" | "gcard";
+}) {
+  const examples = exampleList(item);
+  if (examples.length === 0) return null;
+  return (
+    <>
+      {examples.map((ex, i) => (
+        <div className="study-ex" key={i}>
+          <p className={`${variant}-example`}>“{ex.text}”</p>
+          {ex.local && <p className={`${variant}-example-local`}>{ex.local}</p>}
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -409,10 +428,7 @@ function GrammarCard({
         </div>
       </div>
       <p className="gcard-exp">{item.explanation}</p>
-      {item.example && <p className="gcard-example">“{item.example}”</p>}
-      {item.exampleLocal && (
-        <p className="gcard-example-local">{item.exampleLocal}</p>
-      )}
+      <Examples item={item} variant="gcard" />
     </div>
   );
 }

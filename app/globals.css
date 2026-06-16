@@ -1326,9 +1326,17 @@ select {
   color: var(--fg-faint);
   font-style: italic;
 }
+/* Each example pair (original + translation) is grouped so multiple examples
+   on a frequently-seen item stay visually separated. */
+.study-ex {
+  margin-top: 6px;
+}
+.study-ex + .study-ex {
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+}
 .vcard-example,
 .gcard-example {
-  margin-top: 6px;
   font-size: 13px;
   line-height: 1.5;
   color: var(--fg-dim);

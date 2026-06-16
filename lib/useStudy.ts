@@ -2,13 +2,28 @@
 
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 
+/**
+ * One example sentence kept together with its translation. Keeping the original
+ * and its translation in a single object guarantees they never drift apart when
+ * items are merged.
+ */
+export interface Example {
+  /** The example sentence in its own language. */
+  text: string;
+  /** That same sentence translated into the reader's My Page language. */
+  local?: string;
+}
+
 export interface VocabItem {
   term: string;
   lang: string;
   reading: string;
   meaning: string;
-  example: string;
-  /** The example sentence translated into the reader's My Page language. */
+  /** All example sentences seen for this item, each paired with its translation. */
+  examples?: Example[];
+  /** @deprecated Legacy single example — read for back-compat, no longer written. */
+  example?: string;
+  /** @deprecated Legacy single translation — read for back-compat, no longer written. */
   exampleLocal?: string;
   /** How many times this (or a near-identical) item has come up. */
   count?: number;
@@ -20,8 +35,11 @@ export interface GrammarItem {
   title: string;
   lang: string;
   explanation: string;
-  example: string;
-  /** The example sentence translated into the reader's My Page language. */
+  /** All example sentences seen for this item, each paired with its translation. */
+  examples?: Example[];
+  /** @deprecated Legacy single example — read for back-compat, no longer written. */
+  example?: string;
+  /** @deprecated Legacy single translation — read for back-compat, no longer written. */
   exampleLocal?: string;
   count?: number;
   at?: number;
@@ -99,6 +117,49 @@ function similarText(a: string, b: string): boolean {
 const byCount = <T extends { count?: number; at?: number }>(a: T, b: T) =>
   (b.count ?? 1) - (a.count ?? 1) || (b.at ?? 0) - (a.at ?? 0);
 
+/* ---- Example sentences (kept as original+translation pairs) ---- */
+
+// How many example sentences to keep per item before dropping the oldest, so a
+// frequently-seen word shows several past examples without growing unbounded.
+const MAX_EXAMPLES = 6;
+
+// Normalise an item's examples into the paired form, upgrading legacy entries
+// that only had the scalar example/exampleLocal fields.
+export function exampleList(item: {
+  examples?: Example[];
+  example?: string;
+  exampleLocal?: string;
+}): Example[] {
+  const out: Example[] = [];
+  if (Array.isArray(item.examples)) {
+    for (const e of item.examples) {
+      const text = (e?.text ?? "").trim();
+      if (text) out.push({ text, local: (e?.local ?? "").trim() || undefined });
+    }
+  }
+  const legacy = (item.example ?? "").trim();
+  if (legacy && !out.some((e) => similarText(e.text, legacy))) {
+    out.push({ text: legacy, local: (item.exampleLocal ?? "").trim() || undefined });
+  }
+  return out;
+}
+
+// Append new examples to the existing ones, skipping near-duplicates and
+// keeping at most MAX_EXAMPLES (oldest dropped first).
+function mergeExamples(cur: Example[], add: Example[]): Example[] {
+  const out = cur.slice();
+  for (const e of add) {
+    const i = out.findIndex((x) => similarText(x.text, e.text));
+    if (i >= 0) {
+      // Backfill a translation onto an example we already had but couldn't pair.
+      if (!out[i].local && e.local) out[i] = { ...out[i], local: e.local };
+    } else {
+      out.push(e);
+    }
+  }
+  return out.length > MAX_EXAMPLES ? out.slice(out.length - MAX_EXAMPLES) : out;
+}
+
 function mergeVocab(list: VocabItem[], item: VocabItem): VocabItem[] {
   const idx = list.findIndex(
     (p) => p.lang === item.lang && similarText(p.term, item.term),
@@ -115,11 +176,16 @@ function mergeVocab(list: VocabItem[], item: VocabItem): VocabItem[] {
       // Backfill any fields the earlier copy was missing.
       reading: cur.reading || item.reading,
       meaning: cur.meaning || item.meaning,
-      example: cur.example || item.example,
-      exampleLocal: cur.exampleLocal || item.exampleLocal,
+      // Accumulate every example (paired with its own translation) over time.
+      examples: mergeExamples(exampleList(cur), exampleList(item)),
+      example: undefined,
+      exampleLocal: undefined,
     };
   } else {
-    next = [{ ...item, count: 1, at: now }, ...list];
+    next = [
+      { ...item, examples: exampleList(item), example: undefined, exampleLocal: undefined, count: 1, at: now },
+      ...list,
+    ];
   }
   return next.sort(byCount);
 }
@@ -138,11 +204,15 @@ function mergeGrammar(list: GrammarItem[], item: GrammarItem): GrammarItem[] {
       count: (cur.count ?? 1) + 1,
       at: now,
       explanation: cur.explanation || item.explanation,
-      example: cur.example || item.example,
-      exampleLocal: cur.exampleLocal || item.exampleLocal,
+      examples: mergeExamples(exampleList(cur), exampleList(item)),
+      example: undefined,
+      exampleLocal: undefined,
     };
   } else {
-    next = [{ ...item, count: 1, at: now }, ...list];
+    next = [
+      { ...item, examples: exampleList(item), example: undefined, exampleLocal: undefined, count: 1, at: now },
+      ...list,
+    ];
   }
   return next.sort(byCount);
 }
