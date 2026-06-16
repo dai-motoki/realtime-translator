@@ -11,6 +11,7 @@ import {
 import {
   LANGUAGES,
   getLanguage,
+  isRealtimeVoice,
   detectLanguage,
   detectLanguageByOutputs,
 } from "@/lib/languages";
@@ -645,6 +646,14 @@ function LangChips({
               >
                 <span className="langchip-flag">{l.flag}</span>
                 <span className="langchip-name">{l.name}</span>
+                {!l.realtime && (
+                  <span
+                    className="langchip-sub"
+                    title="リアルタイム音声には非対応（テキスト翻訳のみ）"
+                  >
+                    字幕
+                  </span>
+                )}
               </button>
             );
           })}
@@ -694,6 +703,14 @@ function LangSelect({
     <label className={`langselect${disabled ? " disabled" : ""}`}>
       <span className="langselect-flag">{lang.flag}</span>
       <span className="langselect-name">{lang.name}</span>
+      {!lang.realtime && (
+        <span
+          className="langselect-sub"
+          title="リアルタイム音声には非対応（テキスト翻訳のみ）"
+        >
+          字幕のみ
+        </span>
+      )}
       <span className="langselect-caret">▾</span>
       <select
         value={value}
@@ -704,6 +721,7 @@ function LangSelect({
         {LANGUAGES.map((l) => (
           <option key={l.code} value={l.code} disabled={l.code === exclude}>
             {l.flag} {l.name}
+            {l.realtime ? "" : " ・字幕のみ"}
           </option>
         ))}
       </select>
@@ -892,6 +910,14 @@ function ChatMsg({
               <span className="msg-trans-flag" aria-hidden>
                 {getLanguage(tg.lang).flag}
               </span>
+              {!isRealtimeVoice(tg.lang) && (
+                <span
+                  className="trans-sub-tag"
+                  title="リアルタイム音声には非対応（テキスト翻訳のみ）"
+                >
+                  字幕
+                </span>
+              )}
               {tg.text ? (
                 pending ? (
                   <Typewriter text={tg.text} />
