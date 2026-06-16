@@ -66,10 +66,9 @@ export default function Translator() {
   const [micPerm, setMicPerm] = useState<MicPermission>("unknown");
   const [optimizing, setOptimizing] = useState(false);
 
-  // Flip the whole UI 180° so the person across the table can read it. Driven
-  // either manually or, when granted, by the device's tilt sensor.
+  // Flip the whole UI 180° so the person across the table can read it. Toggled
+  // manually with the "相手向き" button.
   const [flipped, setFlipped] = useState(false);
-  const [orientOn, setOrientOn] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -190,40 +189,6 @@ export default function Translator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t.segments.length]);
 
-  // Ask for tilt-sensor access (iOS needs a gesture) and turn on auto-flip.
-  const enableOrientation = useCallback(async () => {
-    if (orientOn) return;
-    try {
-      const D = window.DeviceOrientationEvent as unknown as {
-        requestPermission?: () => Promise<"granted" | "denied">;
-      };
-      if (D && typeof D.requestPermission === "function") {
-        const r = await D.requestPermission();
-        if (r !== "granted") return;
-      }
-      setOrientOn(true);
-    } catch {
-      // sensor not available — manual flip button still works
-    }
-  }, [orientOn]);
-
-  // Auto-flip when the phone is tilted toward the other person (wide hysteresis
-  // so it doesn't flip-flop), once the sensor is enabled.
-  useEffect(() => {
-    if (!orientOn) return;
-    const onOrient = (e: DeviceOrientationEvent) => {
-      const beta = e.beta;
-      if (beta == null) return;
-      setFlipped((prev) => {
-        if (!prev && beta < 25) return true;
-        if (prev && beta > 55) return false;
-        return prev;
-      });
-    };
-    window.addEventListener("deviceorientation", onOrient);
-    return () => window.removeEventListener("deviceorientation", onOrient);
-  }, [orientOn]);
-
   const switchMode = useCallback(
     (next: Mode) => {
       if (next === mode) return;
@@ -237,13 +202,12 @@ export default function Translator() {
   // speaks is translated into every other language live.
   const onConvToggle = useCallback(async () => {
     if (t.status === "idle" || t.status === "error") {
-      void enableOrientation();
       t.setAutoLangs(convLangs);
       await t.start(convLangs);
     } else {
       t.stop();
     }
-  }, [t, convLangs, enableOrientation]);
+  }, [t, convLangs]);
 
   const onLiveToggle = useCallback(async () => {
     if (t.status === "idle" || t.status === "error") {
