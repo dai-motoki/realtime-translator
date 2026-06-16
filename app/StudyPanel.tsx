@@ -351,6 +351,9 @@ function VocabCard({
       {item.example && !hiddenMeaning && (
         <p className="vcard-example">“{item.example}”</p>
       )}
+      {item.exampleLocal && !hiddenMeaning && (
+        <p className="vcard-example-local">{item.exampleLocal}</p>
+      )}
     </div>
   );
 }
@@ -407,6 +410,9 @@ function GrammarCard({
       </div>
       <p className="gcard-exp">{item.explanation}</p>
       {item.example && <p className="gcard-example">“{item.example}”</p>}
+      {item.exampleLocal && (
+        <p className="gcard-example-local">{item.exampleLocal}</p>
+      )}
     </div>
   );
 }
