@@ -22,12 +22,16 @@ export function StudyPanel({
   study,
   speech,
   lines,
+  auto,
+  onToggleAuto,
 }: {
   open: boolean;
   onClose: () => void;
   study: Study;
   speech: Speech;
   lines: StudyLine[];
+  auto: boolean;
+  onToggleAuto: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("learn");
   // Flashcard-style review: hide meanings until each card is tapped.
@@ -62,10 +66,27 @@ export function StudyPanel({
       <div className="study-backdrop" onClick={onClose} />
       <div className="study-sheet">
         <header className="study-head">
-          <h2 className="study-title">📚 学習</h2>
-          <button className="study-close" onClick={onClose} aria-label="閉じる">
-            ✕
-          </button>
+          <h2 className="study-title">
+            📚 学習
+            {study.accumulating && (
+              <span className="study-accum" title="会話から自動で追加中">
+                ✨ 追加中…
+              </span>
+            )}
+          </h2>
+          <div className="study-head-right">
+            <button
+              className={`study-auto${auto ? " on" : ""}`}
+              onClick={onToggleAuto}
+              aria-pressed={auto}
+              title="会話から自動で単語帳・文法ノートに追加"
+            >
+              自動蓄積 {auto ? "ON" : "OFF"}
+            </button>
+            <button className="study-close" onClick={onClose} aria-label="閉じる">
+              ✕
+            </button>
+          </div>
         </header>
 
         <div className="study-tabs">
@@ -119,7 +140,8 @@ export function StudyPanel({
               </div>
               {study.savedVocab.length === 0 ? (
                 <p className="study-empty">
-                  「会話から学ぶ」で単語を生成して、＋で保存するとここに貯まります。
+                  会話を続けると、自動でここに単語が貯まります（自動蓄積ON時）。
+                  「会話から学ぶ」で手動追加もできます。
                 </p>
               ) : (
                 study.savedVocab.map((v) => {
@@ -145,7 +167,8 @@ export function StudyPanel({
             <div className="study-list">
               {study.savedGrammar.length === 0 ? (
                 <p className="study-empty">
-                  「会話から学ぶ」で文法を生成して、＋で保存するとここに貯まります。
+                  会話を続けると、自動でここに文法ポイントが貯まります（自動蓄積ON時）。
+                  「会話から学ぶ」で手動追加もできます。
                 </p>
               ) : (
                 study.savedGrammar.map((g) => {

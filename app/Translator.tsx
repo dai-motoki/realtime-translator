@@ -55,6 +55,8 @@ export default function Translator() {
   // Vocabulary + grammar study built from the conversation, saved on-device.
   const study = useStudy();
   const [studyOpen, setStudyOpen] = useState(false);
+  // When on, new lines are auto-filed into the 単語帳 / 文法ノート as you talk.
+  const [autoStudy, setAutoStudy] = useState(true);
 
   const [mode, setMode] = useState<Mode>("talk");
 
@@ -276,6 +278,32 @@ export default function Translator() {
     [t.segments],
   );
 
+  // Latest-value refs so the debounced auto-study effect needn't depend on the
+  // (re-created-each-render) study object or lines array.
+  const studyLinesRef = useRef(studyLines);
+  const accumulateRef = useRef(study.accumulate);
+  useEffect(() => {
+    studyLinesRef.current = studyLines;
+    accumulateRef.current = study.accumulate;
+  });
+
+  // Auto-accumulation: a few seconds after the conversation grows, file any new
+  // lines into the saved 単語帳 / 文法ノート. Dedup makes re-sends harmless.
+  const studiedRef = useRef(0);
+  useEffect(() => {
+    const n = t.segments.length;
+    if (n < studiedRef.current) studiedRef.current = n; // history cleared
+    if (!autoStudy || n <= studiedRef.current) return;
+    const id = window.setTimeout(() => {
+      const lines = studyLinesRef.current;
+      if (lines.length <= studiedRef.current) return;
+      const from = Math.max(0, studiedRef.current - 1); // 1 line of context
+      studiedRef.current = lines.length;
+      void accumulateRef.current(lines.slice(from));
+    }, 5000);
+    return () => window.clearTimeout(id);
+  }, [t.segments.length, autoStudy]);
+
   const micBlocked =
     micPerm === "denied" ||
     (!!t.error &&
@@ -437,6 +465,8 @@ export default function Translator() {
         study={study}
         speech={speech}
         lines={studyLines}
+        auto={autoStudy}
+        onToggleAuto={() => setAutoStudy((v) => !v)}
       />
     </div>
   );

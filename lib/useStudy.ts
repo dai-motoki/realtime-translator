@@ -86,6 +86,7 @@ const grammarStore = makeStore<GrammarItem>(GRAMMAR_KEY);
 export function useStudy() {
   const [generated, setGenerated] = useState<StudySet | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [accumulating, setAccumulating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const savedVocab = useSyncExternalStore(
@@ -100,6 +101,7 @@ export function useStudy() {
   );
 
   const abortRef = useRef<AbortController | null>(null);
+  const accRef = useRef(false);
 
   const generate = useCallback(async (lines: StudyLine[]) => {
     abortRef.current?.abort();
@@ -136,6 +138,45 @@ export function useStudy() {
     }
   }, []);
 
+  // Auto-accumulation: generate from the latest lines and silently file every
+  // new vocab/grammar item into the saved lists (deduped). One run at a time.
+  const accumulate = useCallback(async (lines: StudyLine[]) => {
+    if (accRef.current || lines.length === 0) return;
+    accRef.current = true;
+    setAccumulating(true);
+    try {
+      const res = await fetch("/api/study", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lines }),
+      });
+      if (!res.ok) return;
+      const data = (await res.json().catch(() => null)) as
+        | Partial<StudySet>
+        | null;
+      if (!data) return;
+
+      const curV = vocabStore.get();
+      const seenV = new Set(curV.map(vocabKey));
+      const addV = (Array.isArray(data.vocab) ? data.vocab : []).filter(
+        (v) => v.term && v.meaning && !seenV.has(vocabKey(v)),
+      );
+      if (addV.length) vocabStore.set([...addV, ...curV]);
+
+      const curG = grammarStore.get();
+      const seenG = new Set(curG.map(grammarKey));
+      const addG = (Array.isArray(data.grammar) ? data.grammar : []).filter(
+        (g) => g.title && g.explanation && !seenG.has(grammarKey(g)),
+      );
+      if (addG.length) grammarStore.set([...addG, ...curG]);
+    } catch {
+      // network/parse errors are non-fatal for background accumulation
+    } finally {
+      accRef.current = false;
+      setAccumulating(false);
+    }
+  }, []);
+
   const saveVocab = useCallback((item: VocabItem) => {
     const cur = vocabStore.get();
     if (cur.some((p) => vocabKey(p) === vocabKey(item))) return;
@@ -159,8 +200,10 @@ export function useStudy() {
   return {
     generated,
     generating,
+    accumulating,
     error,
     generate,
+    accumulate,
     savedVocab,
     savedGrammar,
     saveVocab,

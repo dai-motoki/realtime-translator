@@ -951,6 +951,34 @@ select {
 .study-title {
   font-size: 17px;
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.study-accum {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent-2);
+  animation: blink 1.2s infinite;
+}
+.study-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.study-auto {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--fg-dim);
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line);
+}
+.study-auto.on {
+  color: #04231a;
+  background: var(--them);
+  border-color: transparent;
 }
 .study-close {
   width: 32px;
