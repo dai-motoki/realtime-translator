@@ -1326,6 +1326,40 @@ select {
   color: var(--fg-faint);
   font-style: italic;
 }
+/* Language filter chips above the saved Vocabulary / Grammar lists. */
+.study-langfilter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.lf-chip {
+  padding: 4px 10px;
+  font-size: 12.5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-elev-2);
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+.lf-chip.on {
+  border-color: var(--accent, var(--line-strong));
+  background: var(--accent-soft, var(--bg-elev-1));
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* "Not reviewed yet" marker on saved word cards. */
+.study-new {
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  background: var(--accent-soft, var(--bg-elev-1));
+  color: var(--accent, var(--fg));
+  border: 1px solid var(--accent, var(--line-strong));
+}
+
 /* Each example pair (original + translation) is grouped so multiple examples
    on a frequently-seen item stay visually separated. */
 .study-ex {

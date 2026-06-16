@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getLanguage } from "@/lib/languages";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { getLanguage, LANGUAGES } from "@/lib/languages";
 import { useT, useUiLang } from "@/lib/i18n";
 import { useSpeech } from "@/lib/useSpeech";
 import {
@@ -9,10 +9,21 @@ import {
   vocabKey,
   grammarKey,
   exampleList,
+  sortForLearning,
   type StudyLine,
   type VocabItem,
   type GrammarItem,
 } from "@/lib/useStudy";
+
+// Languages present in a list, ordered the same way the picker orders them.
+const LANG_ORDER = new Map(LANGUAGES.map((l, i) => [l.code, i]));
+function langsIn(items: { lang: string }[]): string[] {
+  const set = new Set<string>();
+  for (const it of items) if (it.lang) set.add(it.lang);
+  return [...set].sort(
+    (a, b) => (LANG_ORDER.get(a) ?? 999) - (LANG_ORDER.get(b) ?? 999),
+  );
+}
 
 type Study = ReturnType<typeof useStudy>;
 type Speech = ReturnType<typeof useSpeech>;
@@ -40,6 +51,9 @@ export function StudyPanel({
   // Flashcard-style review: hide meanings until each card is tapped.
   const [review, setReview] = useState(false);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  // Language filters for the saved lists ("all" = no filter).
+  const [vocabLang, setVocabLang] = useState("all");
+  const [grammarLang, setGrammarLang] = useState("all");
 
   // Close on Escape for desktop use.
   useEffect(() => {
@@ -144,6 +158,11 @@ export function StudyPanel({
                   </button>
                 )}
               </div>
+              <LangFilter
+                langs={langsIn(study.savedVocab)}
+                value={vocabLang}
+                onChange={setVocabLang}
+              />
               {study.savedVocab.length === 0 ? (
                 <p className="study-empty">
                   {tx(
@@ -151,27 +170,25 @@ export function StudyPanel({
                   )}
                 </p>
               ) : (
-                study.savedVocab.map((v) => {
-                  const key = vocabKey(v);
-                  const hidden = review && !revealed.has(key);
-                  return (
-                    <VocabCard
-                      key={key}
-                      item={v}
-                      speech={speech}
-                      hiddenMeaning={hidden}
-                      onToggle={() => review && toggleReveal(key)}
-                      saved
-                      onRemove={() => study.removeVocab(key)}
-                    />
-                  );
-                })
+                <SavedVocabList
+                  study={study}
+                  speech={speech}
+                  langFilter={vocabLang}
+                  review={review}
+                  revealed={revealed}
+                  onToggleReveal={toggleReveal}
+                />
               )}
             </div>
           )}
 
           {tab === "grammar" && (
             <div className="study-list">
+              <LangFilter
+                langs={langsIn(study.savedGrammar)}
+                value={grammarLang}
+                onChange={setGrammarLang}
+              />
               {study.savedGrammar.length === 0 ? (
                 <p className="study-empty">
                   {tx(
@@ -179,23 +196,218 @@ export function StudyPanel({
                   )}
                 </p>
               ) : (
-                study.savedGrammar.map((g) => {
-                  const key = grammarKey(g);
-                  return (
-                    <GrammarCard
-                      key={key}
-                      item={g}
-                      saved
-                      onRemove={() => study.removeGrammar(key)}
-                    />
-                  );
-                })
+                study.savedGrammar
+                  .filter(
+                    (g) => grammarLang === "all" || g.lang === grammarLang,
+                  )
+                  .map((g) => {
+                    const key = grammarKey(g);
+                    return (
+                      <GrammarCard
+                        key={key}
+                        item={g}
+                        saved
+                        onRemove={() => study.removeGrammar(key)}
+                      />
+                    );
+                  })
               )}
             </div>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+// A row of language chips for filtering a saved list. Hidden when there's only
+// one (or no) language present, since there's nothing to filter.
+function LangFilter({
+  langs,
+  value,
+  onChange,
+}: {
+  langs: string[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const tx = useT();
+  if (langs.length <= 1) return null;
+  return (
+    <div className="study-langfilter">
+      <button
+        type="button"
+        className={`lf-chip${value === "all" ? " on" : ""}`}
+        onClick={() => onChange("all")}
+      >
+        🌐 {tx("All")}
+      </button>
+      {langs.map((code) => {
+        const l = getLanguage(code);
+        return (
+          <button
+            key={code}
+            type="button"
+            className={`lf-chip${value === code ? " on" : ""}`}
+            onClick={() => onChange(code)}
+          >
+            {l.flag} {l.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Accumulates how long a card stays in view (≥60% visible) and reports it, so
+// the learning sort can rank words by how long you dwelt on them.
+function useDwell(
+  key: string,
+  flush: (key: string, ms: number) => void,
+): (el: HTMLDivElement | null) => void {
+  const elRef = useRef<HTMLDivElement | null>(null);
+  const startRef = useRef<number | null>(null);
+  const setRef = (el: HTMLDivElement | null) => {
+    elRef.current = el;
+  };
+  useEffect(() => {
+    const el = elRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const commit = () => {
+      if (startRef.current != null) {
+        flush(key, Date.now() - startRef.current);
+        startRef.current = null;
+      }
+    };
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting && e.intersectionRatio >= 0.6) {
+            startRef.current ??= Date.now();
+          } else {
+            commit();
+          }
+        }
+      },
+      { threshold: [0, 0.6, 1] },
+    );
+    io.observe(el);
+    const onVis = () => {
+      if (document.hidden) commit();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      commit();
+      io.disconnect();
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [key, flush]);
+  return setRef;
+}
+
+// Card with dwell tracking; one per saved word.
+function TrackedVocabCard({
+  item,
+  speech,
+  hiddenMeaning,
+  onToggle,
+  onRemove,
+  onDwell,
+}: {
+  item: VocabItem;
+  speech: Speech;
+  hiddenMeaning: boolean;
+  onToggle: () => void;
+  onRemove: () => void;
+  onDwell: (key: string, ms: number) => void;
+}) {
+  const key = vocabKey(item);
+  const cardRef = useDwell(key, onDwell);
+  return (
+    <VocabCard
+      item={item}
+      speech={speech}
+      hiddenMeaning={hiddenMeaning}
+      onToggle={onToggle}
+      saved
+      showStatus
+      onRemove={onRemove}
+      cardRef={cardRef}
+    />
+  );
+}
+
+// The saved Vocabulary list, ordered for learning: unseen words first, then the
+// ones you dwelt on longest. The order is frozen while you read (it only
+// recomputes when the set of words or the language filter changes) so cards
+// don't jump as dwell times tick up.
+function SavedVocabList({
+  study,
+  speech,
+  langFilter,
+  review,
+  revealed,
+  onToggleReveal,
+}: {
+  study: Study;
+  speech: Speech;
+  langFilter: string;
+  review: boolean;
+  revealed: Set<string>;
+  onToggleReveal: (key: string) => void;
+}) {
+  const tx = useT();
+  const filtered = useMemo(
+    () =>
+      study.savedVocab.filter(
+        (v) => langFilter === "all" || v.lang === langFilter,
+      ),
+    [study.savedVocab, langFilter],
+  );
+
+  const keySig = filtered.map(vocabKey).join("|");
+  const [orderedKeys, setOrderedKeys] = useState<string[]>([]);
+  // Keep the latest list available to the resort effect without making it a
+  // dependency, so dwell ticks don't re-trigger (and reorder) the list.
+  const filteredRef = useRef(filtered);
+  useEffect(() => {
+    filteredRef.current = filtered;
+  });
+  useEffect(() => {
+    setOrderedKeys(sortForLearning(filteredRef.current).map(vocabKey));
+  }, [keySig]);
+
+  const display = useMemo(() => {
+    const byKey = new Map(filtered.map((v) => [vocabKey(v), v]));
+    const known = new Set(orderedKeys);
+    const inOrder = orderedKeys
+      .map((k) => byKey.get(k))
+      .filter((v): v is VocabItem => !!v);
+    const extras = filtered.filter((v) => !known.has(vocabKey(v)));
+    return [...inOrder, ...extras];
+  }, [filtered, orderedKeys]);
+
+  if (display.length === 0) {
+    return <p className="study-empty">{tx("No words in this language yet.")}</p>;
+  }
+  return (
+    <>
+      {display.map((v) => {
+        const key = vocabKey(v);
+        const hidden = review && !revealed.has(key);
+        return (
+          <TrackedVocabCard
+            key={key}
+            item={v}
+            speech={speech}
+            hiddenMeaning={hidden}
+            onToggle={() => review && onToggleReveal(key)}
+            onRemove={() => study.removeVocab(key)}
+            onDwell={study.addVocabDwell}
+          />
+        );
+      })}
+    </>
   );
 }
 
@@ -276,6 +488,8 @@ function VocabCard({
   onRemove,
   hiddenMeaning,
   onToggle,
+  showStatus,
+  cardRef,
 }: {
   item: VocabItem;
   speech: Speech;
@@ -284,18 +498,26 @@ function VocabCard({
   onRemove?: () => void;
   hiddenMeaning?: boolean;
   onToggle?: () => void;
+  /** Show the "not reviewed yet" marker (saved list only). */
+  showStatus?: boolean;
+  cardRef?: (el: HTMLDivElement | null) => void;
 }) {
   const tx = useT();
   const flag = getLanguage(item.lang).flag;
   const spKey = `vocab:${vocabKey(item)}`;
   const playing = speech.playingKey === spKey;
   return (
-    <div className="vcard" onClick={onToggle}>
+    <div className="vcard" onClick={onToggle} ref={cardRef}>
       <div className="vcard-top">
         <span className="vcard-flag" aria-hidden>
           {flag}
         </span>
         <span className="vcard-term">{item.term}</span>
+        {showStatus && !item.seen && (
+          <span className="study-new" title={tx("Not reviewed yet")}>
+            {tx("New")}
+          </span>
+        )}
         {(item.count ?? 1) > 1 && (
           <span
             className="study-times"

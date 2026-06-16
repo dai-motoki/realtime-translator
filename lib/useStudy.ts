@@ -29,6 +29,10 @@ export interface VocabItem {
   count?: number;
   /** Last time it was seen (for tie-breaking the sort). */
   at?: number;
+  /** Total ms the learner has dwelt on this card while reviewing. */
+  dwell?: number;
+  /** Whether the learner has actually looked at this card at least once. */
+  seen?: boolean;
 }
 
 export interface GrammarItem {
@@ -217,6 +221,23 @@ function mergeGrammar(list: GrammarItem[], item: GrammarItem): GrammarItem[] {
   return next.sort(byCount);
 }
 
+/**
+ * Learning-optimised order: words you haven't looked at yet float to the top so
+ * you meet them first; once seen, the ones you dwelt on longest (i.e. struggled
+ * with) come next, with frequency/recency breaking ties.
+ */
+export function sortForLearning<
+  T extends { count?: number; at?: number; dwell?: number; seen?: boolean },
+>(list: T[]): T[] {
+  return list.slice().sort((a, b) => {
+    const sa = a.seen ? 1 : 0;
+    const sb = b.seen ? 1 : 0;
+    if (sa !== sb) return sa - sb; // unseen (0) first
+    if (!a.seen) return byCount(a, b); // both unseen: frequency then recency
+    return (b.dwell ?? 0) - (a.dwell ?? 0) || byCount(a, b); // both seen: longest dwell first
+  });
+}
+
 function load<T>(key: string): T[] {
   if (typeof window === "undefined") return [];
   try {
@@ -363,6 +384,20 @@ export function useStudy() {
     vocabStore.set(vocabStore.get().filter((p) => vocabKey(p) !== key));
   }, []);
 
+  // Record viewing time on a card; marks it seen so the learning sort can demote
+  // it below words you haven't met yet. Does not re-sort the stored list, so
+  // cards don't jump around while you're scrolling — the new order applies next
+  // time the list is sorted (e.g. when the Vocabulary tab is reopened).
+  const addVocabDwell = useCallback((key: string, ms: number) => {
+    if (!(ms > 0)) return;
+    const list = vocabStore.get();
+    const idx = list.findIndex((p) => vocabKey(p) === key);
+    if (idx < 0) return;
+    const next = list.slice();
+    next[idx] = { ...next[idx], dwell: (next[idx].dwell ?? 0) + ms, seen: true };
+    vocabStore.set(next);
+  }, []);
+
   const saveGrammar = useCallback((item: GrammarItem) => {
     grammarStore.set(mergeGrammar(grammarStore.get(), item));
   }, []);
@@ -398,6 +433,7 @@ export function useStudy() {
     savedGrammar,
     saveVocab,
     removeVocab,
+    addVocabDwell,
     saveGrammar,
     removeGrammar,
     hasVocab,
