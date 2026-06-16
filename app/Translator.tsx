@@ -15,6 +15,11 @@ import {
   detectLanguageByOutputs,
 } from "@/lib/languages";
 import { useTranslator, type Segment } from "@/lib/useTranslator";
+import {
+  resolveBaseLang,
+  saveBaseLang,
+  defaultConvLangs,
+} from "@/lib/locale";
 import { useSpeech } from "@/lib/useSpeech";
 import { useStudy, type StudyLine } from "@/lib/useStudy";
 import { StudyPanel } from "./StudyPanel";
@@ -35,9 +40,6 @@ type RefinedLine = {
   targets?: RefinedTarget[];
 };
 
-// Default conversation languages (speak any one → translated into the others).
-const DEFAULT_CONV_LANGS = ["ja", "en", "zh"];
-
 // Browser-only platform detection, exposed via useSyncExternalStore so it stays
 // SSR-safe (server snapshot = null) without a hydration mismatch.
 let cachedPlatform: Platform | null = null;
@@ -45,6 +47,17 @@ function platformSnapshot(): Platform | null {
   if (!cachedPlatform) cachedPlatform = detectPlatform();
   return cachedPlatform;
 }
+
+// Base language = the language this device's owner reads/speaks. Resolved once
+// from a remembered choice or the device locale, and exposed through
+// useSyncExternalStore so it stays SSR-safe (server snapshot = null) just like
+// the platform probe above.
+let cachedBaseLang: string | null = null;
+function baseLangSnapshot(): string | null {
+  if (!cachedBaseLang) cachedBaseLang = resolveBaseLang();
+  return cachedBaseLang;
+}
+
 const noopSubscribe = () => () => {};
 
 export default function Translator() {
@@ -60,24 +73,57 @@ export default function Translator() {
 
   const [mode, setMode] = useState<Mode>("talk");
 
-  // Conversation languages (auto multi-way translation: speak any one and it's
-  // translated into all the others).
-  const [convLangs, setConvLangs] = useState<string[]>(DEFAULT_CONV_LANGS);
+  // Resolved device / remembered base language (null during SSR + first paint).
+  const baseLang = useSyncExternalStore(
+    noopSubscribe,
+    baseLangSnapshot,
+    () => null,
+  );
 
-  const toggleConvLang = useCallback((code: string) => {
-    setConvLangs((prev) => {
-      if (prev.includes(code)) {
-        // Keep at least two languages in the conversation.
-        return prev.length > 2 ? prev.filter((c) => c !== code) : prev;
-      }
-      // Keep selection ordered by the master language list for stable display.
-      const next = [...prev, code];
-      return LANGUAGES.map((l) => l.code).filter((c) => next.includes(c));
-    });
+  // Conversation languages (auto multi-way translation: speak any one and it's
+  // translated into all the others). Until the user edits the set we derive it
+  // from the base language so their own language is included and listed first;
+  // `convOverride` holds an explicit selection once they toggle a chip. The
+  // base language only seeds this default — it never rewrites an existing
+  // selection or the multi-language translation results.
+  const [convOverride, setConvOverride] = useState<string[] | null>(null);
+  const convLangs = useMemo(
+    () => convOverride ?? defaultConvLangs(baseLang ?? "ja"),
+    [convOverride, baseLang],
+  );
+
+  const toggleConvLang = useCallback(
+    (code: string) => {
+      setConvOverride(() => {
+        if (convLangs.includes(code)) {
+          // Keep at least two languages in the conversation.
+          return convLangs.length > 2
+            ? convLangs.filter((c) => c !== code)
+            : convLangs;
+        }
+        // Keep selection ordered by the master language list for stable display.
+        const next = [...convLangs, code];
+        return LANGUAGES.map((l) => l.code).filter((c) => next.includes(c));
+      });
+    },
+    [convLangs],
+  );
+
+  // Live mode: translate everything heard into this language. Defaults to the
+  // base language; `targetOverride` holds an explicit pick from the selector.
+  const [targetOverride, setTargetOverride] = useState<string | null>(null);
+  const targetLang = targetOverride ?? baseLang ?? "ja";
+  const setTargetLang = useCallback((v: string) => {
+    setTargetOverride(v);
+    // Remember the chosen output language (翻訳後言語) for next time.
+    saveBaseLang(v);
   }, []);
 
-  // Live mode: translate everything heard into this language.
-  const [targetLang, setTargetLang] = useState("ja");
+  // Persist the resolved base language once it's known, so a first-time visitor
+  // keeps the device-detected language on their next visit too.
+  useEffect(() => {
+    if (baseLang && !targetOverride) saveBaseLang(baseLang);
+  }, [baseLang, targetOverride]);
 
   const platform = useSyncExternalStore(
     noopSubscribe,
