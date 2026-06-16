@@ -1,15 +1,16 @@
 "use client";
 
-// Client-side UI internationalization, modeled on ainewsblitz's approach:
-// English is the source; when the user picks a "My Page" language we translate
-// the whole UI into it (via /api/translate), show English first, then swap in
-// the translation once it arrives. Results are cached in localStorage so the
-// next visit is instant and offline-friendly.
+// Client-side UI internationalization, modeled on ainewsblitz: English is the
+// source; when the user picks a "My Page" language we translate the whole UI
+// into it and STREAM the result in — each string reveals character by character
+// as the model types it (via /api/translate/stream), exactly like ainewsblitz's
+// dynamic streaming. A spinner shows until the stream starts. Results are cached
+// in localStorage so the next visit is instant.
 //
 // Strings are keyed by their English text — t("Start conversation") — so there's
 // no separate key catalog to keep in sync. UI_STRINGS seeds the up-front batch
 // (so panels that mount later are already translated); t() also registers any
-// string it sees as a safety net.
+// string it sees and the provider re-translates the newcomers.
 
 import {
   createContext,
@@ -26,9 +27,6 @@ import { UI_STRINGS } from "@/lib/uiStrings";
 
 type Dict = Record<string, string>;
 
-// Every source string we might need to translate. Seeded from the catalog; t()
-// adds anything new it encounters (e.g. a panel that mounts later). Growth is
-// published as a version number so the provider can re-translate the newcomers.
 const REGISTRY = new Set<string>(UI_STRINGS);
 let registryVersion = 0;
 const registryListeners = new Set<() => void>();
@@ -36,7 +34,6 @@ function registerString(s: string): void {
   if (REGISTRY.has(s)) return;
   REGISTRY.add(s);
   registryVersion += 1;
-  // Notify outside the render phase (t() runs during render).
   queueMicrotask(() => registryListeners.forEach((l) => l()));
 }
 function subscribeRegistry(cb: () => void): () => void {
@@ -69,9 +66,8 @@ function saveCache(lang: string, dict: Dict): void {
   }
 }
 
-// Resolved "My Page" language (stored choice or device locale), read SSR-safely:
-// server + first client render see null → English, matching hydration, then the
-// real language is applied on the client.
+// Resolved "My Page" language, read SSR-safely (server + first client render
+// see null → English, matching hydration; the real language applies on client).
 let cachedUiLang: string | null = null;
 function uiLangSnapshot(): string | null {
   if (!cachedUiLang) cachedUiLang = resolveUiLang();
@@ -82,7 +78,8 @@ const noopSubscribe = () => () => {};
 type Ctx = { lang: string; t: (s: string) => string; setLang: (l: string) => void };
 const I18nContext = createContext<Ctx>({ lang: "en", t: (s) => s, setLang: () => {} });
 
-async function fetchTranslations(lang: string, items: string[]): Promise<Dict> {
+/** Non-streaming fallback (the batch /api/translate endpoint). */
+async function fetchBatch(lang: string, items: string[]): Promise<Dict> {
   const CHUNK = 50;
   const out: Dict = {};
   for (let i = 0; i < items.length; i += CHUNK) {
@@ -105,6 +102,73 @@ async function fetchTranslations(lang: string, items: string[]): Promise<Dict> {
   return out;
 }
 
+/**
+ * Stream translations in. onItem(source, text, done) fires as the model types:
+ * `text` is the (growing) partial until `done`, then the final string. Falls
+ * back to the batch endpoint if streaming is unavailable.
+ */
+async function streamTranslations(
+  lang: string,
+  items: string[],
+  onItem: (src: string, text: string, done: boolean) => void,
+  onStart: () => void,
+): Promise<void> {
+  let got = false;
+  try {
+    const res = await fetch("/api/translate/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lang, items }),
+    });
+    if (res.status === 204) return; // nothing to translate
+    if (!res.ok || !res.body) throw new Error("no stream");
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let sep: number;
+      while ((sep = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, sep);
+        buf = buf.slice(sep + 2);
+        const line = chunk.startsWith("data:") ? chunk.slice(5).trim() : chunk.trim();
+        if (!line) continue;
+        let ev: { i?: number; text?: string; done?: boolean };
+        try {
+          ev = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (
+          typeof ev.i === "number" &&
+          typeof ev.text === "string" &&
+          items[ev.i] != null
+        ) {
+          if (!got) {
+            got = true;
+            onStart();
+          }
+          onItem(items[ev.i], ev.text, !!ev.done);
+        }
+      }
+    }
+    if (got) return;
+    throw new Error("empty stream");
+  } catch {
+    // Fallback: non-streaming batch (still better than staying English).
+    try {
+      const map = await fetchBatch(lang, items);
+      const entries = Object.entries(map);
+      if (entries.length) onStart();
+      for (const [k, v] of entries) onItem(k, v, true);
+    } catch {
+      // keep English
+    }
+  }
+}
+
 export function I18nProvider({ children }: { children: ReactNode }) {
   const resolved = useSyncExternalStore(noopSubscribe, uiLangSnapshot, () => null);
   const regVersion = useSyncExternalStore(
@@ -115,38 +179,55 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [override, setOverride] = useState<string | null>(null);
   const lang = override ?? resolved ?? "en";
   const [dict, setDict] = useState<Dict>({});
+  const [translating, setTranslating] = useState(false);
 
   useEffect(() => {
     if (typeof document !== "undefined") document.documentElement.lang = lang;
   }, [lang]);
 
   useEffect(() => {
-    // English is the source — t() returns it directly, no dict needed.
-    if (lang === "en") return;
     let alive = true;
     (async () => {
+      if (lang === "en") {
+        setTranslating(false);
+        return;
+      }
       const cached = loadCache(lang);
-      // Show any cached translations right away (English-first otherwise).
-      if (alive && Object.keys(cached).length) setDict(cached);
+      if (Object.keys(cached).length) {
+        setDict((prev) => ({ ...prev, ...cached }));
+      }
       const missing = Array.from(REGISTRY).filter((s) => !(s in cached));
-      if (missing.length === 0) return;
-      const map = await fetchTranslations(lang, missing);
-      if (!alive || Object.keys(map).length === 0) return;
-      setDict((prev) => {
-        const merged = { ...prev, ...cached, ...map };
-        saveCache(lang, merged);
-        return merged;
-      });
+      if (missing.length === 0) {
+        setTranslating(false);
+        return;
+      }
+      // Spinner on until the stream actually starts producing text.
+      setTranslating(true);
+      const collected: Dict = { ...cached };
+      await streamTranslations(
+        lang,
+        missing,
+        (src, text, done) => {
+          if (!alive) return;
+          setDict((prev) => ({ ...prev, [src]: text }));
+          if (done) collected[src] = text; // cache finals only
+        },
+        () => {
+          if (alive) setTranslating(false);
+        },
+      );
+      if (!alive) return;
+      setTranslating(false);
+      saveCache(lang, collected);
     })();
     return () => {
       alive = false;
     };
-    // regVersion: re-translate strings registered by panels that mounted later.
   }, [lang, regVersion]);
 
   const t = useCallback(
     (s: string) => {
-      registerString(s); // safety net: translate strings not in the catalog too
+      registerString(s);
       if (lang === "en") return s;
       return dict[s] ?? s;
     },
@@ -159,7 +240,17 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<Ctx>(() => ({ lang, t, setLang }), [lang, t, setLang]);
-  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+  return (
+    <I18nContext.Provider value={value}>
+      {children}
+      {translating && (
+        <div className="i18n-translating" role="status" aria-live="polite">
+          <span className="i18n-spinner" aria-hidden />
+          {t("Translating…")}
+        </div>
+      )}
+    </I18nContext.Provider>
+  );
 }
 
 /** Translate one English source string into the current My Page language. */
