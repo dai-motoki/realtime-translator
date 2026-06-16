@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getLanguage } from "@/lib/languages";
+import { useT, useUiLang } from "@/lib/i18n";
 import { useSpeech } from "@/lib/useSpeech";
 import {
   useStudy,
@@ -33,6 +34,7 @@ export function StudyPanel({
   auto: boolean;
   onToggleAuto: () => void;
 }) {
+  const tx = useT();
   const [tab, setTab] = useState<Tab>("learn");
   // Flashcard-style review: hide meanings until each card is tapped.
   const [review, setReview] = useState(false);
@@ -64,10 +66,13 @@ export function StudyPanel({
       <div className="study-sheet">
         <header className="study-head">
           <h2 className="study-title">
-            📚 学習
+            📚 {tx("Study")}
             {study.accumulating && (
-              <span className="study-accum" title="会話から自動で追加中">
-                ✨ 追加中…
+              <span
+                className="study-accum"
+                title={tx("Adding from the conversation automatically")}
+              >
+                ✨ {tx("Adding…")}
               </span>
             )}
           </h2>
@@ -76,11 +81,15 @@ export function StudyPanel({
               className={`study-auto${auto ? " on" : ""}`}
               onClick={onToggleAuto}
               aria-pressed={auto}
-              title="会話から自動で単語帳・文法ノートに追加"
+              title={tx("Automatically add words and grammar from the conversation")}
             >
-              自動蓄積 {auto ? "ON" : "OFF"}
+              {tx("Auto-collect")} {auto ? "ON" : "OFF"}
             </button>
-            <button className="study-close" onClick={onClose} aria-label="閉じる">
+            <button
+              className="study-close"
+              onClick={onClose}
+              aria-label={tx("Close")}
+            >
               ✕
             </button>
           </div>
@@ -91,19 +100,20 @@ export function StudyPanel({
             className={`study-tab${tab === "learn" ? " on" : ""}`}
             onClick={() => setTab("learn")}
           >
-            会話から学ぶ
+            {tx("Learn from conversation")}
           </button>
           <button
             className={`study-tab${tab === "vocab" ? " on" : ""}`}
             onClick={() => setTab("vocab")}
           >
-            単語帳{study.savedVocab.length ? ` (${study.savedVocab.length})` : ""}
+            {tx("Vocabulary")}
+            {study.savedVocab.length ? ` (${study.savedVocab.length})` : ""}
           </button>
           <button
             className={`study-tab${tab === "grammar" ? " on" : ""}`}
             onClick={() => setTab("grammar")}
           >
-            文法ノート
+            {tx("Grammar notes")}
             {study.savedGrammar.length ? ` (${study.savedGrammar.length})` : ""}
           </button>
         </div>
@@ -116,7 +126,9 @@ export function StudyPanel({
           {tab === "vocab" && (
             <div className="study-list">
               <div className="study-listhead">
-                <span>{study.savedVocab.length} 語</span>
+                <span>
+                  {study.savedVocab.length} {tx("words")}
+                </span>
                 {study.savedVocab.length > 0 && (
                   <button
                     className={`study-review${review ? " on" : ""}`}
@@ -125,14 +137,17 @@ export function StudyPanel({
                       setRevealed(new Set());
                     }}
                   >
-                    {review ? "✓ 復習モード" : "復習モード（意味を隠す）"}
+                    {review
+                      ? `✓ ${tx("Review mode")}`
+                      : tx("Review mode (hide meanings)")}
                   </button>
                 )}
               </div>
               {study.savedVocab.length === 0 ? (
                 <p className="study-empty">
-                  会話を続けると、自動でここに単語が貯まります（自動蓄積ON時）。
-                  「会話から学ぶ」で手動追加もできます。
+                  {tx(
+                    "Keep talking and words will collect here automatically (when Auto-collect is ON). You can also add them by hand from “Learn from conversation”.",
+                  )}
                 </p>
               ) : (
                 study.savedVocab.map((v) => {
@@ -158,8 +173,9 @@ export function StudyPanel({
             <div className="study-list">
               {study.savedGrammar.length === 0 ? (
                 <p className="study-empty">
-                  会話を続けると、自動でここに文法ポイントが貯まります（自動蓄積ON時）。
-                  「会話から学ぶ」で手動追加もできます。
+                  {tx(
+                    "Keep talking and grammar points will collect here automatically (when Auto-collect is ON). You can also add them by hand from “Learn from conversation”.",
+                  )}
                 </p>
               ) : (
                 study.savedGrammar.map((g) => {
@@ -191,33 +207,35 @@ function LearnTab({
   speech: Speech;
   lines: StudyLine[];
 }) {
+  const tx = useT();
+  const uiLang = useUiLang();
   const gen = study.generated;
   const canGenerate = lines.length > 0;
   return (
     <div className="study-list">
       <button
         className="study-generate"
-        onClick={() => study.generate(lines)}
+        onClick={() => study.generate(lines, uiLang)}
         disabled={study.generating || !canGenerate}
       >
         {study.generating
-          ? "✨ 生成中…"
+          ? `✨ ${tx("Generating…")}`
           : gen
-            ? "🔄 この会話からもう一度生成"
-            : "✨ この会話から単語・文法を生成"}
+            ? `🔄 ${tx("Generate again from this conversation")}`
+            : `✨ ${tx("Generate words & grammar from this conversation")}`}
       </button>
       {!canGenerate && (
         <p className="study-empty">
-          まだ会話がありません。少し話してから生成してください。
+          {tx("No conversation yet. Talk a little, then generate.")}
         </p>
       )}
-      {study.error && <p className="study-error">{study.error}</p>}
+      {study.error && <p className="study-error">{tx(study.error)}</p>}
 
       {gen && (
         <>
-          <h3 className="study-section">単語・フレーズ</h3>
+          <h3 className="study-section">{tx("Words & phrases")}</h3>
           {gen.vocab.length === 0 ? (
-            <p className="study-empty">抽出できる単語がありませんでした。</p>
+            <p className="study-empty">{tx("No words could be extracted.")}</p>
           ) : (
             gen.vocab.map((v) => (
               <VocabCard
@@ -230,9 +248,9 @@ function LearnTab({
             ))
           )}
 
-          <h3 className="study-section">文法ポイント</h3>
+          <h3 className="study-section">{tx("Grammar points")}</h3>
           {gen.grammar.length === 0 ? (
-            <p className="study-empty">抽出できる文法がありませんでした。</p>
+            <p className="study-empty">{tx("No grammar could be extracted.")}</p>
           ) : (
             gen.grammar.map((g) => (
               <GrammarCard
@@ -266,6 +284,7 @@ function VocabCard({
   hiddenMeaning?: boolean;
   onToggle?: () => void;
 }) {
+  const tx = useT();
   const flag = getLanguage(item.lang).flag;
   const spKey = `vocab:${vocabKey(item)}`;
   const playing = speech.playingKey === spKey;
@@ -277,14 +296,17 @@ function VocabCard({
         </span>
         <span className="vcard-term">{item.term}</span>
         {(item.count ?? 1) > 1 && (
-          <span className="study-times" title={`${item.count}回出てきました`}>
+          <span
+            className="study-times"
+            title={tx("Appeared {n} times").replace("{n}", String(item.count))}
+          >
             ×{item.count}
           </span>
         )}
         <button
           type="button"
           className={`speak-btn${playing ? " playing" : ""}`}
-          aria-label="読み上げ"
+          aria-label={tx("Read aloud")}
           onClick={(e) => {
             e.stopPropagation();
             speech.speak(spKey, item.term, item.lang);
@@ -302,7 +324,7 @@ function VocabCard({
                 if (!saved) onSave();
               }}
             >
-              {saved ? "✓ 保存済み" : "＋ 単語帳"}
+              {saved ? `✓ ${tx("Saved")}` : `＋ ${tx("Vocabulary")}`}
             </button>
           )}
           {onRemove && (
@@ -313,7 +335,7 @@ function VocabCard({
                 e.stopPropagation();
                 onRemove();
               }}
-              aria-label="削除"
+              aria-label={tx("Delete")}
             >
               🗑
             </button>
@@ -322,7 +344,7 @@ function VocabCard({
       </div>
       {item.reading && <p className="vcard-reading">{item.reading}</p>}
       {hiddenMeaning ? (
-        <p className="vcard-meaning hidden">タップして意味を表示</p>
+        <p className="vcard-meaning hidden">{tx("Tap to show the meaning")}</p>
       ) : (
         <p className="vcard-meaning">{item.meaning}</p>
       )}
@@ -344,6 +366,7 @@ function GrammarCard({
   onSave?: () => void;
   onRemove?: () => void;
 }) {
+  const tx = useT();
   const flag = getLanguage(item.lang).flag;
   return (
     <div className="gcard">
@@ -353,7 +376,10 @@ function GrammarCard({
         </span>
         <span className="gcard-title">{item.title}</span>
         {(item.count ?? 1) > 1 && (
-          <span className="study-times" title={`${item.count}回出てきました`}>
+          <span
+            className="study-times"
+            title={tx("Appeared {n} times").replace("{n}", String(item.count))}
+          >
             ×{item.count}
           </span>
         )}
@@ -364,7 +390,7 @@ function GrammarCard({
               className={`study-save${saved ? " saved" : ""}`}
               onClick={() => !saved && onSave()}
             >
-              {saved ? "✓ 保存済み" : "＋ ノート"}
+              {saved ? `✓ ${tx("Saved")}` : `＋ ${tx("Notes")}`}
             </button>
           )}
           {onRemove && (
@@ -372,7 +398,7 @@ function GrammarCard({
               type="button"
               className="study-remove"
               onClick={onRemove}
-              aria-label="削除"
+              aria-label={tx("Delete")}
             >
               🗑
             </button>

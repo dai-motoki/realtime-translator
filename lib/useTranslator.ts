@@ -60,15 +60,15 @@ let segCounter = 0;
 function micErrorMessage(err: unknown): string {
   const name = err instanceof DOMException ? err.name : "";
   if (name === "NotAllowedError" || name === "SecurityError") {
-    return "マイクの使用が許可されませんでした。ブラウザ／OSの設定でマイクを許可してから、もう一度お試しください。";
+    return "Microphone access was denied. Allow the microphone in your browser/OS settings and try again.";
   }
   if (name === "NotFoundError" || name === "OverconstrainedError") {
-    return "マイクが見つかりませんでした。デバイスのマイクを確認してください。";
+    return "No microphone was found. Check your device’s microphone.";
   }
   if (name === "NotReadableError") {
-    return "マイクを使用できませんでした。他のアプリがマイクを使用していないか確認してください。";
+    return "Couldn’t use the microphone. Check that no other app is using it.";
   }
-  return err instanceof Error ? err.message : "マイクを起動できませんでした。";
+  return err instanceof Error ? err.message : "Couldn’t start the microphone.";
 }
 
 export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
@@ -291,7 +291,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   const buildSession = useCallback(
     async (lang: string, isPrimary: boolean): Promise<Session> => {
       const stream = streamRef.current;
-      if (!stream) throw new Error("マイクが初期化されていません。");
+      if (!stream) throw new Error("The microphone isn’t ready.");
 
       const tokenRes = await fetch(CLIENT_SECRET_URL, {
         method: "POST",
@@ -303,7 +303,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         error?: string;
       };
       if (!tokenRes.ok || !tokenData.clientSecret) {
-        throw new Error(tokenData.error ?? "セッションの開始に失敗しました。");
+        throw new Error(tokenData.error ?? "Couldn’t start the session.");
       }
 
       const pc = new RTCPeerConnection();
@@ -346,7 +346,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
       if (!sdpRes.ok) {
         const txt = await sdpRes.text();
         throw new Error(
-          `翻訳の接続に失敗しました (${sdpRes.status})。${txt.slice(0, 120)}`,
+          `Couldn’t connect for translation. (${sdpRes.status}) ${txt.slice(0, 120)}`,
         );
       }
       await pc.setRemoteDescription({
@@ -444,7 +444,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
 
       if (!navigator.mediaDevices?.getUserMedia) {
         setError(
-          "このブラウザでは音声入力を利用できません。HTTPSのSafari/Chromeなど対応ブラウザで開いてください（アプリ内ブラウザでは動かないことがあります）。",
+          "This browser can’t capture audio. Open it in a supported browser such as Safari or Chrome over HTTPS (in-app browsers may not work).",
         );
         setStatus("error");
         return;
