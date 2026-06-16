@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
   const lines = Array.isArray(body.lines) ? body.lines : [];
   if (lines.length === 0) {
     return Response.json(
-      { error: "会話がまだありません。" },
+      { error: "There’s no conversation yet." },
       { status: 400 },
     );
   }
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
 
     if (!res.ok) {
       return Response.json(
-        { error: "議事録の生成に失敗しました。少し待って再度お試しください。" },
+        { error: "Failed to generate the minutes." },
         { status: 502 },
       );
     }
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
     const content = extractContent(data);
     if (!content) {
       return Response.json(
-        { error: "議事録の生成に失敗しました。" },
+        { error: "Failed to generate the minutes." },
         { status: 502 },
       );
     }
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
       parsed = JSON.parse(content) as Record<string, unknown>;
     } catch {
       return Response.json(
-        { error: "議事録の生成に失敗しました。" },
+        { error: "Failed to generate the minutes." },
         { status: 502 },
       );
     }
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
     });
   } catch {
     return Response.json(
-      { error: "議事録の生成中にエラーが発生しました。" },
+      { error: "Failed to generate the minutes." },
       { status: 502 },
     );
   }

@@ -7,12 +7,19 @@
 // reports through `navigator.languages` (language + region, e.g. "en-US",
 // "zh-Hant-TW") instead of an IP-geolocated country.
 
-import { LANGUAGES } from "@/lib/languages";
+import { LANGUAGES, isRealtimeVoice } from "@/lib/languages";
 
 const SUPPORTED = new Set(LANGUAGES.map((l) => l.code));
 
 /** localStorage key for the remembered base / output language. */
 export const BASE_LANG_KEY = "rt:baseLang:v1";
+
+/**
+ * localStorage key for the "My Page" UI language — the language the whole app
+ * chrome is shown in. Kept SEPARATE from BASE_LANG_KEY so that changing the
+ * display language never touches the conversation languages or their results.
+ */
+export const UI_LANG_KEY = "rt:uiLang:v1";
 
 /** Ultimate fallback when nothing about the device can be resolved. */
 export const DEFAULT_BASE_LANG = "en";
@@ -129,10 +136,39 @@ export function resolveBaseLang(): string {
   return loadStoredBaseLang() ?? detectDeviceLang();
 }
 
+/** Read the remembered "My Page" UI language, validated against supported codes. */
+export function loadStoredUiLang(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const v = window.localStorage.getItem(UI_LANG_KEY);
+    return v && SUPPORTED.has(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the chosen "My Page" UI language. */
+export function saveUiLang(code: string): void {
+  if (typeof window === "undefined" || !SUPPORTED.has(code)) return;
+  try {
+    window.localStorage.setItem(UI_LANG_KEY, code);
+  } catch {
+    // Private mode / storage disabled — fall back to in-memory only.
+  }
+}
+
+/** Resolve the UI language on load: stored choice wins, else the device locale. */
+export function resolveUiLang(): string {
+  return loadStoredUiLang() ?? detectDeviceLang();
+}
+
 /**
  * Build the default set of conversation (multi-way) languages so the user's own
  * base language is always included and listed first. Mirrors the original
  * 3-language default while adapting its first slot to the device.
+ *
+ * Only realtime-voice languages are seeded — the conversation/live pickers are
+ * limited to the languages gpt-realtime-translate can speak.
  *
  * NOTE: this only seeds the *initial* selection. It deliberately does not touch
  * any existing conversation languages or their translation results — the base /
@@ -142,7 +178,12 @@ export function defaultConvLangs(base: string): string[] {
   const seed = [base, "en", "ja", "zh"];
   const out: string[] = [];
   for (const c of seed) {
-    if (SUPPORTED.has(c) && !out.includes(c)) out.push(c);
+    if (SUPPORTED.has(c) && isRealtimeVoice(c) && !out.includes(c)) out.push(c);
+  }
+  // Guarantee at least two realtime languages even if `base` wasn't one.
+  for (const c of ["en", "ja", "zh"]) {
+    if (out.length >= 3) break;
+    if (!out.includes(c)) out.push(c);
   }
   return out.slice(0, 3);
 }

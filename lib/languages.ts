@@ -68,9 +68,6 @@ const LANGUAGE_NAMES_EN: Record<string, string> = {
   yo: "Yoruba", yua: "Yucatec Maya", zu: "Zulu",
 };
 
-// Legacy / duplicate code spellings — keep one canonical entry per language.
-const OMIT = new Set(["iw", "jw", "fil"]);
-
 // Codes the gpt-realtime-translate model supports as spoken output. Everything
 // else is text-only (subtitles), surfaced with a marker in the UI.
 const REALTIME_VOICE = new Set([
@@ -133,7 +130,6 @@ const PRIORITY = [
 ];
 
 export const LANGUAGES: Language[] = Object.entries(LANGUAGE_NAMES_EN)
-  .filter(([code]) => !OMIT.has(code))
   .map(([code, label]) => {
     const c = CURATED[code];
     return {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getLanguage } from "@/lib/languages";
+import { useT } from "@/lib/i18n";
 import type { Conversation, useConversations } from "@/lib/useConversations";
 import { SpeakerTag } from "./SpeakerTag";
 
@@ -24,7 +25,8 @@ export function LogPanel({
   onClose: () => void;
   convos: Convos;
 }) {
-  // When set, we're viewing one conversation's full chat history (会話ログ).
+  const tx = useT();
+  // When set, we're viewing one conversation's full chat history.
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Close on Escape (or step back out of a detail view first).
@@ -57,14 +59,14 @@ export function LogPanel({
                 <button
                   className="log-back"
                   onClick={() => setSelectedId(null)}
-                  aria-label="一覧に戻る"
+                  aria-label={tx("Back to list")}
                 >
                   ‹
                 </button>
-                💬 会話ログ
+                💬 {tx("Conversation log")}
               </>
             ) : (
-              "📝 議事録"
+              `📝 ${tx("Minutes")}`
             )}
           </h2>
           <div className="study-head-right">
@@ -72,16 +74,24 @@ export function LogPanel({
               <button
                 className="study-auto"
                 onClick={() => {
-                  if (window.confirm("保存した議事録・会話ログをすべて削除しますか？")) {
+                  if (
+                    window.confirm(
+                      tx("Delete all saved minutes and conversation logs?"),
+                    )
+                  ) {
                     convos.clearAll();
                   }
                 }}
-                title="すべて削除"
+                title={tx("Delete everything")}
               >
-                全消去
+                {tx("Clear all")}
               </button>
             )}
-            <button className="study-close" onClick={onClose} aria-label="閉じる">
+            <button
+              className="study-close"
+              onClick={onClose}
+              aria-label={tx("Close")}
+            >
               ✕
             </button>
           </div>
@@ -95,7 +105,9 @@ export function LogPanel({
             />
           ) : list.length === 0 ? (
             <p className="study-empty">
-              まだ議事録はありません。会話を終了すると、その内容が自動で保存され、議事録も自動で作成されます。
+              {tx(
+                "No minutes yet. When you end a conversation it’s saved automatically and its minutes are generated.",
+              )}
             </p>
           ) : (
             <div className="study-list">
@@ -116,7 +128,7 @@ export function LogPanel({
   );
 }
 
-/* ---------------- 議事録カード（一覧） ---------------- */
+/* ---------------- Minutes card (list) ---------------- */
 
 function MinutesCard({
   conv,
@@ -129,8 +141,11 @@ function MinutesCard({
   onRegenerate: () => void;
   onRemove: () => void;
 }) {
+  const tx = useT();
   const m = conv.minutes;
-  const title = m?.title || `${conv.mode === "talk" ? "会話" : "ライブ"}の記録`;
+  const title =
+    m?.title ||
+    tx(conv.mode === "talk" ? "Conversation record" : "Live record");
   return (
     <div className="logcard">
       <div className="logcard-top">
@@ -139,7 +154,7 @@ function MinutesCard({
           type="button"
           className="study-remove"
           onClick={onRemove}
-          aria-label="削除"
+          aria-label={tx("Delete")}
         >
           🗑
         </button>
@@ -150,37 +165,40 @@ function MinutesCard({
         <span className="logcard-flags">
           {conv.langs.map((l) => getLanguage(l).flag).join(" ")}
         </span>
-        <span>{conv.segments.length}行</span>
+        <span>
+          {conv.segments.length} {tx("lines")}
+        </span>
       </div>
 
       {conv.minutesStatus === "generating" && (
-        <p className="logcard-status">✨ 議事録を作成中…</p>
+        <p className="logcard-status">✨ {tx("Generating minutes…")}</p>
       )}
       {conv.minutesStatus === "error" && (
         <div className="logcard-status err">
-          {conv.minutesError ?? "議事録の生成に失敗しました。"}
+          {tx(conv.minutesError ?? "Failed to generate the minutes.")}
           <button type="button" className="logcard-retry" onClick={onRegenerate}>
-            再試行
+            {tx("Retry")}
           </button>
         </div>
       )}
       {m && (
         <div className="minutes">
           {m.summary && <p className="minutes-summary">{m.summary}</p>}
-          <MinutesSection title="論点・トピック" items={m.topics} />
-          <MinutesSection title="決定事項" items={m.decisions} />
-          <MinutesSection title="ToDo・次のアクション" items={m.actions} />
+          <MinutesSection title={tx("Topics")} items={m.topics} />
+          <MinutesSection title={tx("Decisions")} items={m.decisions} />
+          <MinutesSection title={tx("To-dos / next actions")} items={m.actions} />
         </div>
       )}
 
       <button type="button" className="log-open-chat" onClick={onOpen}>
-        💬 会話ログを全部見る（{conv.segments.length}行）
+        💬 {tx("See the full conversation log")} ({conv.segments.length}{" "}
+        {tx("lines")})
       </button>
     </div>
   );
 }
 
-/* ---------------- 詳細（議事録＋会話チャット履歴） ---------------- */
+/* ---------------- Detail (minutes + chat history) ---------------- */
 
 function DetailView({
   conv,
@@ -189,8 +207,11 @@ function DetailView({
   conv: Conversation;
   onRegenerate: () => void;
 }) {
+  const tx = useT();
   const m = conv.minutes;
-  const title = m?.title || `${conv.mode === "talk" ? "会話" : "ライブ"}の記録`;
+  const title =
+    m?.title ||
+    tx(conv.mode === "talk" ? "Conversation record" : "Live record");
   return (
     <div className="log-detail">
       <h3 className="log-detail-title">{title}</h3>
@@ -199,22 +220,24 @@ function DetailView({
         <span className="logcard-flags">
           {conv.langs.map((l) => getLanguage(l).flag).join(" ")}
         </span>
-        <span>{conv.segments.length}行</span>
+        <span>
+          {conv.segments.length} {tx("lines")}
+        </span>
       </div>
 
       {m && (
         <div className="minutes">
           {m.summary && <p className="minutes-summary">{m.summary}</p>}
-          <MinutesSection title="論点・トピック" items={m.topics} />
-          <MinutesSection title="決定事項" items={m.decisions} />
-          <MinutesSection title="ToDo・次のアクション" items={m.actions} />
+          <MinutesSection title={tx("Topics")} items={m.topics} />
+          <MinutesSection title={tx("Decisions")} items={m.decisions} />
+          <MinutesSection title={tx("To-dos / next actions")} items={m.actions} />
           <button type="button" className="logcard-retry alt" onClick={onRegenerate}>
-            🔄 議事録を作り直す
+            🔄 {tx("Regenerate minutes")}
           </button>
         </div>
       )}
 
-      <h4 className="log-chat-head">会話チャット履歴</h4>
+      <h4 className="log-chat-head">{tx("Conversation history")}</h4>
       <ChatHistory conv={conv} />
     </div>
   );

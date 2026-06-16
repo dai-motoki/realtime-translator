@@ -86,6 +86,176 @@ select {
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-bottom: 1px solid var(--line);
 }
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* ---- My Page language switcher (header) ---- */
+.langsw {
+  position: relative;
+  display: inline-block;
+  min-width: 0;
+}
+.langsw-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 46vw;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--fg);
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+}
+.langsw-btn:active {
+  transform: scale(0.97);
+}
+.langsw-flag {
+  font-size: 15px;
+  line-height: 1;
+}
+.langsw-name {
+  max-width: 24vw;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.langsw-count {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(108, 140, 255, 0.16);
+  border-radius: 6px;
+  padding: 2px 5px;
+}
+.langsw-caret {
+  color: var(--fg-faint);
+}
+.langsw-pop {
+  /* Anchored to the viewport (not the button) so it never spills off-screen on
+     a narrow phone — the menu always sits just under the header, on the right. */
+  position: fixed;
+  top: calc(var(--safe-top) + 56px);
+  right: 8px;
+  left: auto;
+  width: min(300px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  z-index: 1000;
+}
+.langsw-search {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-elev);
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  outline: none;
+}
+.langsw-search::placeholder {
+  color: var(--fg-faint);
+}
+.langsw-list {
+  max-height: min(60vh, 360px);
+  overflow-y: auto;
+  padding: 6px 0;
+  margin: 0;
+  list-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+.langsw-sep {
+  border-top: 1px solid var(--line);
+  margin: 6px 14px;
+}
+.langsw-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 14px;
+  font-size: 14px;
+  color: var(--fg);
+}
+.langsw-item-flag {
+  font-size: 16px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+.langsw-item-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.langsw-item.active {
+  background: var(--bg-elev);
+}
+.langsw-item.current {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+/* On phones, keep the switcher compact (flag + count) so the mode toggle fits. */
+@media (max-width: 520px) {
+  .langsw-name {
+    display: none;
+  }
+  .langsw-btn {
+    max-width: none;
+    padding: 0 8px;
+  }
+  .topbar-right {
+    gap: 8px;
+  }
+}
+
+/* ---- UI translation progress spinner ---- */
+.i18n-translating {
+  position: fixed;
+  top: calc(var(--safe-top) + 56px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg-dim);
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.i18n-spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  animation: i18n-spin 0.7s linear infinite;
+}
+@keyframes i18n-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 .brand {
   display: flex;
@@ -96,7 +266,7 @@ select {
 
 .brand-name {
   font-size: 15px;
-  font-weight: 650;
+  font-weight: 800;
   letter-spacing: 0.2px;
   white-space: nowrap;
   overflow: hidden;
@@ -386,35 +556,6 @@ select {
 }
 .langchips.disabled .langchip {
   pointer-events: none;
-}
-/* "subtitles only" marker for languages without realtime voice output. */
-.langchip-sub,
-.langselect-sub,
-.trans-sub-tag {
-  flex: 0 0 auto;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: 1;
-  padding: 2px 5px;
-  border-radius: 6px;
-  color: var(--fg-dim);
-  background: rgba(127, 127, 127, 0.18);
-}
-.langchip.on .langchip-sub {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.28);
-}
-.langselect-sub {
-  margin-left: 2px;
-}
-.trans-sub-tag {
-  margin: 0 4px;
-  vertical-align: middle;
-}
-.msg.a .trans-sub-tag {
-  color: rgba(255, 255, 255, 0.92);
-  background: rgba(255, 255, 255, 0.22);
 }
 
 /* ---------------- Transcript ---------------- */
@@ -1191,6 +1332,16 @@ select {
   font-size: 13px;
   line-height: 1.5;
   color: var(--fg-dim);
+}
+/* The example translated into the reader's My Page language. */
+.vcard-example-local,
+.gcard-example-local {
+  margin-top: 3px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line-strong);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg);
 }
 .gcard-exp {
   margin-top: 7px;

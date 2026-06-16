@@ -1,11 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { SITE_LOG_BEACON_JS } from "@/lib/siteLogBeacon";
 import "./globals.css";
+import { I18nProvider } from "@/lib/i18n";
 
 export const metadata: Metadata = {
-  title: "Realtime Translate — リアルタイム多言語翻訳",
+  title: "Realtime Translate — real-time multilingual translation",
   description:
-    "OpenAI gpt-realtime-translate を使った、話した言葉をその場で多言語に翻訳する音声翻訳アプリ。",
+    "A voice translation app powered by OpenAI gpt-realtime-translate that turns what you say into other languages on the spot.",
   applicationName: "Realtime Translate",
   appleWebApp: {
     capable: true,
@@ -31,9 +32,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ja">
+    <html lang="en">
       <body>
-        {children}
+        <I18nProvider>{children}</I18nProvider>
         {/* 匿名アクセスログのビーコン（zentou-ops の /admin/site-log に集約） */}
         <script dangerouslySetInnerHTML={{ __html: SITE_LOG_BEACON_JS }} />
       </body>

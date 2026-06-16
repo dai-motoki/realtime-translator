@@ -8,6 +8,8 @@ export interface VocabItem {
   reading: string;
   meaning: string;
   example: string;
+  /** The example sentence translated into the reader's My Page language. */
+  exampleLocal?: string;
   /** How many times this (or a near-identical) item has come up. */
   count?: number;
   /** Last time it was seen (for tie-breaking the sort). */
@@ -19,6 +21,8 @@ export interface GrammarItem {
   lang: string;
   explanation: string;
   example: string;
+  /** The example sentence translated into the reader's My Page language. */
+  exampleLocal?: string;
   count?: number;
   at?: number;
 }
@@ -112,6 +116,7 @@ function mergeVocab(list: VocabItem[], item: VocabItem): VocabItem[] {
       reading: cur.reading || item.reading,
       meaning: cur.meaning || item.meaning,
       example: cur.example || item.example,
+      exampleLocal: cur.exampleLocal || item.exampleLocal,
     };
   } else {
     next = [{ ...item, count: 1, at: now }, ...list];
@@ -134,6 +139,7 @@ function mergeGrammar(list: GrammarItem[], item: GrammarItem): GrammarItem[] {
       at: now,
       explanation: cur.explanation || item.explanation,
       example: cur.example || item.example,
+      exampleLocal: cur.exampleLocal || item.exampleLocal,
     };
   } else {
     next = [{ ...item, count: 1, at: now }, ...list];
@@ -207,7 +213,7 @@ export function useStudy() {
   const abortRef = useRef<AbortController | null>(null);
   const accRef = useRef(false);
 
-  const generate = useCallback(async (lines: StudyLine[]) => {
+  const generate = useCallback(async (lines: StudyLine[], lang?: string) => {
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
@@ -217,14 +223,14 @@ export function useStudy() {
       const res = await fetch("/api/study", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lines }),
+        body: JSON.stringify({ lines, lang }),
         signal: ac.signal,
       });
       const data = (await res.json().catch(() => null)) as
         | (Partial<StudySet> & { error?: string })
         | null;
       if (!res.ok) {
-        setError(data?.error ?? "学習教材の生成に失敗しました。");
+        setError(data?.error ?? "Failed to generate study material.");
         return;
       }
       setGenerated({
@@ -233,7 +239,7 @@ export function useStudy() {
       });
     } catch (err) {
       if ((err as Error)?.name === "AbortError") return;
-      setError("通信エラーが発生しました。");
+      setError("A network error occurred.");
     } finally {
       if (abortRef.current === ac) {
         setGenerating(false);
@@ -244,7 +250,7 @@ export function useStudy() {
 
   // Auto-accumulation: generate from the latest lines and silently file every
   // new vocab/grammar item into the saved lists (deduped). One run at a time.
-  const accumulate = useCallback(async (lines: StudyLine[]) => {
+  const accumulate = useCallback(async (lines: StudyLine[], lang?: string) => {
     if (accRef.current || lines.length === 0) return;
     accRef.current = true;
     setAccumulating(true);
@@ -252,7 +258,7 @@ export function useStudy() {
       const res = await fetch("/api/study", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lines }),
+        body: JSON.stringify({ lines, lang }),
       });
       if (!res.ok) return;
       const data = (await res.json().catch(() => null)) as

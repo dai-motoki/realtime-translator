@@ -80,34 +80,38 @@ export async function getMicPermission(): Promise<MicPermission> {
   }
 }
 
-/** OS/browser-specific steps to re-enable a blocked microphone. */
+/**
+ * OS/browser-specific steps to re-enable a blocked microphone. Returned in
+ * English (the app's source language); the UI translates each step via i18n.
+ * The in-app step keeps a {app} placeholder the UI fills in.
+ */
 export function micFixSteps(p: Platform): string[] {
   if (p.inApp) {
     return [
-      `${p.inApp} のアプリ内ブラウザではマイクを使えません。`,
-      "右上のメニューから「Safari / Chrome で開く」を選び、通常のブラウザで開き直してください。",
+      "The microphone can’t be used in {app}’s in-app browser.",
+      "From the menu at the top right choose “Open in Safari / Chrome” and reopen this page in a normal browser.",
     ];
   }
   if (p.os === "ios" && p.browser === "chrome") {
     return [
-      "iPhoneの「設定」→「Chrome」→「マイク」をオンにする",
-      "Chromeに戻ってページを再読み込みし、表示される確認で「許可」を選ぶ",
+      "On iPhone, open Settings → Chrome → Microphone and turn it on.",
+      "Go back to Chrome, reload the page, and choose “Allow” on the prompt.",
     ];
   }
   if (p.os === "ios") {
     return [
-      "アドレスバー左の「ぁあ」→「Webサイトの設定」→「マイク」→「許可」",
-      "または「設定」→「Safari」→「カメラとマイクのアクセス」をオン → 再読み込み",
+      "Tap “ぁあ” at the left of the address bar → Website Settings → Microphone → Allow.",
+      "Or open Settings → Safari → Camera & Microphone Access, turn it on, and reload.",
     ];
   }
   if (p.os === "android") {
     return [
-      "アドレスバーの 🔒（または ⓘ）→「権限」→「マイク」→「許可」",
-      "直らなければ「設定」→「アプリ」→ ブラウザ →「権限」→「マイク」を許可 → 再読み込み",
+      "Tap 🔒 (or ⓘ) in the address bar → Permissions → Microphone → Allow.",
+      "If that doesn’t fix it, open Settings → Apps → your browser → Permissions → Microphone, allow it, and reload.",
     ];
   }
   return [
-    "アドレスバーの 🔒 をタップ →「マイク」を「許可」に変更",
-    "ページを再読み込みして、もう一度お試しください",
+    "Tap 🔒 in the address bar and change “Microphone” to “Allow”.",
+    "Reload the page and try again.",
   ];
 }
