@@ -44,6 +44,11 @@ function getRegistryVersion(): number {
   return registryVersion;
 }
 
+// Label for the optimization indicator. Shown in the TARGET language (it's the
+// first string translated), so we read it straight from the dict — never the
+// English source — and show just the spinner until its translation lands.
+const OPTIMIZING_LABEL = "Optimizing the language…";
+
 const CACHE_PREFIX = "rt:i18n:"; // + lang
 
 function loadCache(lang: string): Dict {
@@ -111,7 +116,6 @@ async function streamTranslations(
   lang: string,
   items: string[],
   onItem: (src: string, text: string, done: boolean) => void,
-  onStart: () => void,
 ): Promise<void> {
   let got = false;
   try {
@@ -146,10 +150,7 @@ async function streamTranslations(
           typeof ev.text === "string" &&
           items[ev.i] != null
         ) {
-          if (!got) {
-            got = true;
-            onStart();
-          }
+          got = true;
           onItem(items[ev.i], ev.text, !!ev.done);
         }
       }
@@ -160,9 +161,7 @@ async function streamTranslations(
     // Fallback: non-streaming batch (still better than staying English).
     try {
       const map = await fetchBatch(lang, items);
-      const entries = Object.entries(map);
-      if (entries.length) onStart();
-      for (const [k, v] of entries) onItem(k, v, true);
+      for (const [k, v] of Object.entries(map)) onItem(k, v, true);
     } catch {
       // keep English
     }
@@ -201,21 +200,15 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         setTranslating(false);
         return;
       }
-      // Spinner on until the stream actually starts producing text.
+      // Show the optimization spinner for the whole pass; text streams in behind
+      // it (the spinner's own label appears in the target language once ready).
       setTranslating(true);
       const collected: Dict = { ...cached };
-      await streamTranslations(
-        lang,
-        missing,
-        (src, text, done) => {
-          if (!alive) return;
-          setDict((prev) => ({ ...prev, [src]: text }));
-          if (done) collected[src] = text; // cache finals only
-        },
-        () => {
-          if (alive) setTranslating(false);
-        },
-      );
+      await streamTranslations(lang, missing, (src, text, done) => {
+        if (!alive) return;
+        setDict((prev) => ({ ...prev, [src]: text }));
+        if (done) collected[src] = text; // cache finals only
+      });
       if (!alive) return;
       setTranslating(false);
       saveCache(lang, collected);
@@ -246,7 +239,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       {translating && (
         <div className="i18n-translating" role="status" aria-live="polite">
           <span className="i18n-spinner" aria-hidden />
-          {t("Translating…")}
+          {dict[OPTIMIZING_LABEL] ? <span>{dict[OPTIMIZING_LABEL]}</span> : null}
         </div>
       )}
     </I18nContext.Provider>
