@@ -8,6 +8,8 @@ export interface VocabItem {
   reading: string;
   meaning: string;
   example: string;
+  /** The example sentence translated into the reader's My Page language. */
+  exampleLocal?: string;
   /** How many times this (or a near-identical) item has come up. */
   count?: number;
   /** Last time it was seen (for tie-breaking the sort). */
@@ -19,6 +21,8 @@ export interface GrammarItem {
   lang: string;
   explanation: string;
   example: string;
+  /** The example sentence translated into the reader's My Page language. */
+  exampleLocal?: string;
   count?: number;
   at?: number;
 }
@@ -112,6 +116,7 @@ function mergeVocab(list: VocabItem[], item: VocabItem): VocabItem[] {
       reading: cur.reading || item.reading,
       meaning: cur.meaning || item.meaning,
       example: cur.example || item.example,
+      exampleLocal: cur.exampleLocal || item.exampleLocal,
     };
   } else {
     next = [{ ...item, count: 1, at: now }, ...list];
@@ -134,6 +139,7 @@ function mergeGrammar(list: GrammarItem[], item: GrammarItem): GrammarItem[] {
       at: now,
       explanation: cur.explanation || item.explanation,
       example: cur.example || item.example,
+      exampleLocal: cur.exampleLocal || item.exampleLocal,
     };
   } else {
     next = [{ ...item, count: 1, at: now }, ...list];

@@ -266,7 +266,7 @@ select {
 
 .brand-name {
   font-size: 15px;
-  font-weight: 650;
+  font-weight: 800;
   letter-spacing: 0.2px;
   white-space: nowrap;
   overflow: hidden;
@@ -1332,6 +1332,16 @@ select {
   font-size: 13px;
   line-height: 1.5;
   color: var(--fg-dim);
+}
+/* The example translated into the reader's My Page language. */
+.vcard-example-local,
+.gcard-example-local {
+  margin-top: 3px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line-strong);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg);
 }
 .gcard-exp {
   margin-top: 7px;
