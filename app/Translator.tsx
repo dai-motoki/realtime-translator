@@ -70,6 +70,9 @@ export default function Translator() {
   // manually with the "相手向き" button.
   const [flipped, setFlipped] = useState(false);
 
+  // Whether the conversation-language picker is expanded (default: expanded).
+  const [langOpen, setLangOpen] = useState(true);
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // Auto-scroll the transcript as new content arrives.
@@ -288,6 +291,8 @@ export default function Translator() {
           selected={convLangs}
           onToggle={toggleConvLang}
           disabled={live || connecting}
+          open={langOpen}
+          onToggleOpen={() => setLangOpen((v) => !v)}
         />
       ) : (
         <LiveTargetBar value={targetLang} onChange={setTargetLang} />
@@ -365,29 +370,51 @@ function LangChips({
   selected,
   onToggle,
   disabled,
+  open,
+  onToggleOpen,
 }: {
   selected: string[];
   onToggle: (code: string) => void;
   disabled: boolean;
+  open: boolean;
+  onToggleOpen: () => void;
 }) {
   return (
-    <div className={`langchips${disabled ? " disabled" : ""}`}>
-      {LANGUAGES.map((l) => {
-        const on = selected.includes(l.code);
-        return (
-          <button
-            key={l.code}
-            type="button"
-            className={`langchip${on ? " on" : ""}`}
-            aria-pressed={on}
-            disabled={disabled}
-            onClick={() => onToggle(l.code)}
-          >
-            <span className="langchip-flag">{l.flag}</span>
-            <span className="langchip-name">{l.name}</span>
-          </button>
-        );
-      })}
+    <div className="langchips-wrap">
+      <button
+        type="button"
+        className="langchips-head"
+        aria-expanded={open}
+        onClick={onToggleOpen}
+      >
+        <span className="langchips-caret">{open ? "▾" : "▸"}</span>
+        <span className="langchips-title">言語</span>
+        {!open && (
+          <span className="langchips-summary">
+            {selected.map((c) => getLanguage(c).flag).join(" ")}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className={`langchips${disabled ? " disabled" : ""}`}>
+          {LANGUAGES.map((l) => {
+            const on = selected.includes(l.code);
+            return (
+              <button
+                key={l.code}
+                type="button"
+                className={`langchip${on ? " on" : ""}`}
+                aria-pressed={on}
+                disabled={disabled}
+                onClick={() => onToggle(l.code)}
+              >
+                <span className="langchip-flag">{l.flag}</span>
+                <span className="langchip-name">{l.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

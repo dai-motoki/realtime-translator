@@ -326,12 +326,33 @@ select {
 }
 
 /* Conversation language picker (multi-select chips) */
-.langchips {
+.langchips-wrap {
   flex: 0 0 auto;
+}
+.langchips-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 16px 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg-dim);
+}
+.langchips-caret {
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+.langchips-summary {
+  margin-left: auto;
+  font-size: 16px;
+  letter-spacing: 1px;
+}
+.langchips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 14px 16px 6px;
+  padding: 6px 16px 6px;
 }
 .langchip {
   display: inline-flex;
