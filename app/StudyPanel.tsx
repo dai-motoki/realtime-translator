@@ -58,9 +58,6 @@ export function StudyPanel({
       return next;
     });
 
-  const savedVocabKeys = new Set(study.savedVocab.map(vocabKey));
-  const savedGrammarKeys = new Set(study.savedGrammar.map(grammarKey));
-
   return (
     <div className="study-overlay" role="dialog" aria-modal="true">
       <div className="study-backdrop" onClick={onClose} />
@@ -113,13 +110,7 @@ export function StudyPanel({
 
         <div className="study-body">
           {tab === "learn" && (
-            <LearnTab
-              study={study}
-              speech={speech}
-              lines={lines}
-              savedVocabKeys={savedVocabKeys}
-              savedGrammarKeys={savedGrammarKeys}
-            />
+            <LearnTab study={study} speech={speech} lines={lines} />
           )}
 
           {tab === "vocab" && (
@@ -195,14 +186,10 @@ function LearnTab({
   study,
   speech,
   lines,
-  savedVocabKeys,
-  savedGrammarKeys,
 }: {
   study: Study;
   speech: Speech;
   lines: StudyLine[];
-  savedVocabKeys: Set<string>;
-  savedGrammarKeys: Set<string>;
 }) {
   const gen = study.generated;
   const canGenerate = lines.length > 0;
@@ -232,35 +219,29 @@ function LearnTab({
           {gen.vocab.length === 0 ? (
             <p className="study-empty">抽出できる単語がありませんでした。</p>
           ) : (
-            gen.vocab.map((v) => {
-              const key = vocabKey(v);
-              return (
-                <VocabCard
-                  key={key}
-                  item={v}
-                  speech={speech}
-                  saved={savedVocabKeys.has(key)}
-                  onSave={() => study.saveVocab(v)}
-                />
-              );
-            })
+            gen.vocab.map((v) => (
+              <VocabCard
+                key={vocabKey(v)}
+                item={v}
+                speech={speech}
+                saved={study.hasVocab(v)}
+                onSave={() => study.saveVocab(v)}
+              />
+            ))
           )}
 
           <h3 className="study-section">文法ポイント</h3>
           {gen.grammar.length === 0 ? (
             <p className="study-empty">抽出できる文法がありませんでした。</p>
           ) : (
-            gen.grammar.map((g) => {
-              const key = grammarKey(g);
-              return (
-                <GrammarCard
-                  key={key}
-                  item={g}
-                  saved={savedGrammarKeys.has(key)}
-                  onSave={() => study.saveGrammar(g)}
-                />
-              );
-            })
+            gen.grammar.map((g) => (
+              <GrammarCard
+                key={grammarKey(g)}
+                item={g}
+                saved={study.hasGrammar(g)}
+                onSave={() => study.saveGrammar(g)}
+              />
+            ))
           )}
         </>
       )}
@@ -295,6 +276,11 @@ function VocabCard({
           {flag}
         </span>
         <span className="vcard-term">{item.term}</span>
+        {(item.count ?? 1) > 1 && (
+          <span className="study-times" title={`${item.count}回出てきました`}>
+            ×{item.count}
+          </span>
+        )}
         <button
           type="button"
           className={`speak-btn${playing ? " playing" : ""}`}
@@ -366,6 +352,11 @@ function GrammarCard({
           {flag}
         </span>
         <span className="gcard-title">{item.title}</span>
+        {(item.count ?? 1) > 1 && (
+          <span className="study-times" title={`${item.count}回出てきました`}>
+            ×{item.count}
+          </span>
+        )}
         <div className="vcard-actions">
           {onSave && (
             <button

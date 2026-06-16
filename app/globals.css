@@ -1106,6 +1106,15 @@ select {
   font-weight: 700;
   word-break: break-word;
 }
+.study-times {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #04231a;
+  background: var(--them);
+  padding: 1px 7px;
+  border-radius: 999px;
+}
 .vcard-actions {
   margin-left: auto;
   display: flex;

@@ -8,6 +8,10 @@ export interface VocabItem {
   reading: string;
   meaning: string;
   example: string;
+  /** How many times this (or a near-identical) item has come up. */
+  count?: number;
+  /** Last time it was seen (for tie-breaking the sort). */
+  at?: number;
 }
 
 export interface GrammarItem {
@@ -15,6 +19,8 @@ export interface GrammarItem {
   lang: string;
   explanation: string;
   example: string;
+  count?: number;
+  at?: number;
 }
 
 export interface StudySet {
@@ -36,6 +42,104 @@ export const vocabKey = (v: { lang: string; term: string }) =>
   `${v.lang}:${v.term}`;
 export const grammarKey = (g: { lang: string; title: string }) =>
   `${g.lang}:${g.title}`;
+
+/* ---- Near-duplicate merging (lexical similarity, no embeddings needed) ---- */
+
+const norm = (s: string): string =>
+  s
+    .toLowerCase()
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+function bigrams(s: string): string[] {
+  const t = s.replace(/\s+/g, "");
+  if (t.length < 2) return t ? [t] : [];
+  const out: string[] = [];
+  for (let i = 0; i < t.length - 1; i++) out.push(t.slice(i, i + 2));
+  return out;
+}
+
+// Character-bigram Dice coefficient — works for both spaced (Latin) and
+// unspaced (CJK) text. 1 = identical, ~0 = unrelated.
+function dice(a: string, b: string): number {
+  if (a === b) return a ? 1 : 0;
+  const A = bigrams(a);
+  const B = bigrams(b);
+  if (!A.length || !B.length) return 0;
+  const counts = new Map<string, number>();
+  for (const g of A) counts.set(g, (counts.get(g) ?? 0) + 1);
+  let inter = 0;
+  for (const g of B) {
+    const c = counts.get(g);
+    if (c) {
+      inter += 1;
+      counts.set(g, c - 1);
+    }
+  }
+  return (2 * inter) / (A.length + B.length);
+}
+
+// Treat two strings as "the same item" when they're the same language and the
+// text is identical or very close (high threshold avoids merging genuinely
+// distinct vocabulary).
+const SIMILAR_THRESHOLD = 0.82;
+function similarText(a: string, b: string): boolean {
+  const na = norm(a);
+  const nb = norm(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  return dice(na, nb) >= SIMILAR_THRESHOLD;
+}
+
+const byCount = <T extends { count?: number; at?: number }>(a: T, b: T) =>
+  (b.count ?? 1) - (a.count ?? 1) || (b.at ?? 0) - (a.at ?? 0);
+
+function mergeVocab(list: VocabItem[], item: VocabItem): VocabItem[] {
+  const idx = list.findIndex(
+    (p) => p.lang === item.lang && similarText(p.term, item.term),
+  );
+  const now = Date.now();
+  let next: VocabItem[];
+  if (idx >= 0) {
+    const cur = list[idx];
+    next = list.slice();
+    next[idx] = {
+      ...cur,
+      count: (cur.count ?? 1) + 1,
+      at: now,
+      // Backfill any fields the earlier copy was missing.
+      reading: cur.reading || item.reading,
+      meaning: cur.meaning || item.meaning,
+      example: cur.example || item.example,
+    };
+  } else {
+    next = [{ ...item, count: 1, at: now }, ...list];
+  }
+  return next.sort(byCount);
+}
+
+function mergeGrammar(list: GrammarItem[], item: GrammarItem): GrammarItem[] {
+  const idx = list.findIndex(
+    (p) => p.lang === item.lang && similarText(p.title, item.title),
+  );
+  const now = Date.now();
+  let next: GrammarItem[];
+  if (idx >= 0) {
+    const cur = list[idx];
+    next = list.slice();
+    next[idx] = {
+      ...cur,
+      count: (cur.count ?? 1) + 1,
+      at: now,
+      explanation: cur.explanation || item.explanation,
+      example: cur.example || item.example,
+    };
+  } else {
+    next = [{ ...item, count: 1, at: now }, ...list];
+  }
+  return next.sort(byCount);
+}
 
 function load<T>(key: string): T[] {
   if (typeof window === "undefined") return [];
@@ -156,19 +260,17 @@ export function useStudy() {
         | null;
       if (!data) return;
 
-      const curV = vocabStore.get();
-      const seenV = new Set(curV.map(vocabKey));
-      const addV = (Array.isArray(data.vocab) ? data.vocab : []).filter(
-        (v) => v.term && v.meaning && !seenV.has(vocabKey(v)),
-      );
-      if (addV.length) vocabStore.set([...addV, ...curV]);
+      let nextV = vocabStore.get();
+      for (const v of Array.isArray(data.vocab) ? data.vocab : []) {
+        if (v.term && v.meaning) nextV = mergeVocab(nextV, v);
+      }
+      if (nextV !== vocabStore.get()) vocabStore.set(nextV);
 
-      const curG = grammarStore.get();
-      const seenG = new Set(curG.map(grammarKey));
-      const addG = (Array.isArray(data.grammar) ? data.grammar : []).filter(
-        (g) => g.title && g.explanation && !seenG.has(grammarKey(g)),
-      );
-      if (addG.length) grammarStore.set([...addG, ...curG]);
+      let nextG = grammarStore.get();
+      for (const g of Array.isArray(data.grammar) ? data.grammar : []) {
+        if (g.title && g.explanation) nextG = mergeGrammar(nextG, g);
+      }
+      if (nextG !== grammarStore.get()) grammarStore.set(nextG);
     } catch {
       // network/parse errors are non-fatal for background accumulation
     } finally {
@@ -178,9 +280,7 @@ export function useStudy() {
   }, []);
 
   const saveVocab = useCallback((item: VocabItem) => {
-    const cur = vocabStore.get();
-    if (cur.some((p) => vocabKey(p) === vocabKey(item))) return;
-    vocabStore.set([item, ...cur]);
+    vocabStore.set(mergeVocab(vocabStore.get(), item));
   }, []);
 
   const removeVocab = useCallback((key: string) => {
@@ -188,14 +288,28 @@ export function useStudy() {
   }, []);
 
   const saveGrammar = useCallback((item: GrammarItem) => {
-    const cur = grammarStore.get();
-    if (cur.some((p) => grammarKey(p) === grammarKey(item))) return;
-    grammarStore.set([item, ...cur]);
+    grammarStore.set(mergeGrammar(grammarStore.get(), item));
   }, []);
 
   const removeGrammar = useCallback((key: string) => {
     grammarStore.set(grammarStore.get().filter((p) => grammarKey(p) !== key));
   }, []);
+
+  // Whether a near-identical item is already saved (for the ＋/保存済み state).
+  const hasVocab = useCallback(
+    (item: VocabItem) =>
+      savedVocab.some(
+        (p) => p.lang === item.lang && similarText(p.term, item.term),
+      ),
+    [savedVocab],
+  );
+  const hasGrammar = useCallback(
+    (item: GrammarItem) =>
+      savedGrammar.some(
+        (p) => p.lang === item.lang && similarText(p.title, item.title),
+      ),
+    [savedGrammar],
+  );
 
   return {
     generated,
@@ -210,5 +324,7 @@ export function useStudy() {
     removeVocab,
     saveGrammar,
     removeGrammar,
+    hasVocab,
+    hasGrammar,
   };
 }
