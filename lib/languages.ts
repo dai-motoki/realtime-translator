@@ -101,6 +101,67 @@ export function detectLanguage(text: string, langs: string[]): string | null {
   return has(s);
 }
 
+/** Lowercase and strip punctuation/symbols so two transcripts can be compared. */
+function normalizeForCompare(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Word-multiset Dice coefficient: 1 for identical text, ~0 for unrelated. */
+function wordDice(a: string, b: string): number {
+  const aw = a ? a.split(" ") : [];
+  const bw = b ? b.split(" ") : [];
+  if (!aw.length || !bw.length) return 0;
+  const counts = new Map<string, number>();
+  for (const w of bw) counts.set(w, (counts.get(w) ?? 0) + 1);
+  let inter = 0;
+  for (const w of aw) {
+    const c = counts.get(w);
+    if (c) {
+      inter += 1;
+      counts.set(w, c - 1);
+    }
+  }
+  return (2 * inter) / (aw.length + bw.length);
+}
+
+/**
+ * Decide the spoken language when the source text alone is ambiguous — e.g.
+ * several conversation languages share the Latin script (English vs Malay), so
+ * {@link detectLanguage} can't tell them apart.
+ *
+ * We run one translation session per language, so `outputs` also holds a
+ * translation of this very utterance INTO each language. The session that
+ * translated into the spoken language produced a near-identical copy of the
+ * source, so the output whose text is closest to the source reveals which
+ * language was actually spoken. Returns null when nothing matches well.
+ */
+export function detectLanguageByOutputs(
+  source: string,
+  langs: string[],
+  outputs: Record<string, string>,
+): string | null {
+  const src = normalizeForCompare(source);
+  if (!src) return null;
+  let best: string | null = null;
+  let bestScore = 0;
+  for (const l of langs) {
+    const out = outputs[l];
+    if (!out) continue;
+    const score = wordDice(src, normalizeForCompare(out));
+    if (score > bestScore) {
+      bestScore = score;
+      best = l;
+    }
+  }
+  // Require a strong match so an ordinary cross-language translation (which
+  // shares few words with the source) is never mistaken for the spoken text.
+  return bestScore >= 0.5 ? best : null;
+}
+
 /**
  * Backwards-compatible two-language helper, expressed via {@link detectLanguage}.
  */

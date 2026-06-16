@@ -1,7 +1,7 @@
 "use client";
 
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
-import { detectLanguage } from "@/lib/languages";
+import { detectLanguage, detectLanguageByOutputs } from "@/lib/languages";
 
 export type Status = "idle" | "connecting" | "live" | "error";
 
@@ -145,8 +145,15 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     let sourceLang: string | null = null;
     let targetLangs: string[];
     if (langs) {
+      // Prefer script-based detection; when that's ambiguous (e.g. several
+      // Latin-script languages), fall back to whichever translation came back
+      // closest to the source — that session translated into the spoken
+      // language, so its output mirrors the source.
       sourceLang =
-        detectLanguage(source, langs) ?? segLangRef.current ?? langs[0];
+        detectLanguage(source, langs) ??
+        detectLanguageByOutputs(source, langs, tgtBufs.current) ??
+        segLangRef.current ??
+        langs[0];
       targetLangs = langs.filter((l) => l !== sourceLang);
     } else {
       targetLangs = outLangsRef.current;
