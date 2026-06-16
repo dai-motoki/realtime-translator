@@ -1,64 +1,168 @@
-// Output languages supported by the gpt-realtime-translate model.
-// (Input speech is auto-detected from 70+ languages, so there is no source picker.)
+// Languages available for translation.
+//
+// The full list is ported from ainewsblitz's 210-language table (the "211
+// language" set). Of these, a curated subset is also supported by the
+// gpt-realtime-translate model for *spoken* output — those are flagged
+// `realtime: true`. The rest still translate as on-screen text (subtitles);
+// the UI marks them so it's clear there's no realtime voice. Input speech is
+// auto-detected, so there is no source picker.
 
 export interface Language {
   code: string;
-  /** Native name shown in the UI */
+  /** Native name shown in the UI (falls back to the English label). */
   name: string;
-  /** Short English label */
+  /** Short English label. */
   label: string;
   flag: string;
   /** Shown up-front (vs. behind the "もっと見る" expander). */
   common?: boolean;
+  /** Supported by gpt-realtime-translate for live voice output. */
+  realtime: boolean;
 }
 
-export const LANGUAGES: Language[] = [
-  // Common languages — shown by default.
-  { code: "ja", name: "日本語", label: "Japanese", flag: "🇯🇵", common: true },
-  { code: "en", name: "English", label: "English", flag: "🇺🇸", common: true },
-  { code: "zh", name: "中文", label: "Chinese", flag: "🇨🇳", common: true },
-  { code: "ko", name: "한국어", label: "Korean", flag: "🇰🇷", common: true },
-  { code: "es", name: "Español", label: "Spanish", flag: "🇪🇸", common: true },
-  { code: "fr", name: "Français", label: "French", flag: "🇫🇷", common: true },
-  { code: "de", name: "Deutsch", label: "German", flag: "🇩🇪", common: true },
-  { code: "it", name: "Italiano", label: "Italian", flag: "🇮🇹", common: true },
-  { code: "pt", name: "Português", label: "Portuguese", flag: "🇧🇷", common: true },
-  { code: "ru", name: "Русский", label: "Russian", flag: "🇷🇺", common: true },
-  { code: "hi", name: "हिन्दी", label: "Hindi", flag: "🇮🇳", common: true },
-  { code: "ar", name: "العربية", label: "Arabic", flag: "🇸🇦", common: true },
-  { code: "nl", name: "Nederlands", label: "Dutch", flag: "🇳🇱", common: true },
-  // More languages — revealed via the "もっと見る" expander.
-  { code: "id", name: "Bahasa Indonesia", label: "Indonesian", flag: "🇮🇩" },
-  { code: "th", name: "ไทย", label: "Thai", flag: "🇹🇭" },
-  { code: "vi", name: "Tiếng Việt", label: "Vietnamese", flag: "🇻🇳" },
-  { code: "tr", name: "Türkçe", label: "Turkish", flag: "🇹🇷" },
-  { code: "pl", name: "Polski", label: "Polish", flag: "🇵🇱" },
-  { code: "uk", name: "Українська", label: "Ukrainian", flag: "🇺🇦" },
-  { code: "sv", name: "Svenska", label: "Swedish", flag: "🇸🇪" },
-  { code: "da", name: "Dansk", label: "Danish", flag: "🇩🇰" },
-  { code: "fi", name: "Suomi", label: "Finnish", flag: "🇫🇮" },
-  { code: "no", name: "Norsk", label: "Norwegian", flag: "🇳🇴" },
-  { code: "cs", name: "Čeština", label: "Czech", flag: "🇨🇿" },
-  { code: "el", name: "Ελληνικά", label: "Greek", flag: "🇬🇷" },
-  { code: "he", name: "עברית", label: "Hebrew", flag: "🇮🇱" },
-  { code: "ro", name: "Română", label: "Romanian", flag: "🇷🇴" },
-  { code: "hu", name: "Magyar", label: "Hungarian", flag: "🇭🇺" },
-  { code: "ms", name: "Bahasa Melayu", label: "Malay", flag: "🇲🇾" },
-  { code: "bn", name: "বাংলা", label: "Bengali", flag: "🇧🇩" },
-  { code: "ta", name: "தமிழ்", label: "Tamil", flag: "🇮🇳" },
-  { code: "ur", name: "اردو", label: "Urdu", flag: "🇵🇰" },
-  { code: "fa", name: "فارسی", label: "Persian", flag: "🇮🇷" },
-  { code: "tl", name: "Filipino", label: "Filipino", flag: "🇵🇭" },
-  { code: "sk", name: "Slovenčina", label: "Slovak", flag: "🇸🇰" },
-  { code: "bg", name: "Български", label: "Bulgarian", flag: "🇧🇬" },
-  { code: "hr", name: "Hrvatski", label: "Croatian", flag: "🇭🇷" },
-  { code: "sr", name: "Српски", label: "Serbian", flag: "🇷🇸" },
+// BCP-47 code → English display name. Ported from ainewsblitz's LANGUAGE_NAMES.
+const LANGUAGE_NAMES_EN: Record<string, string> = {
+  ab: "Abkhaz", ace: "Acehnese", ach: "Acholi", aa: "Afar", af: "Afrikaans",
+  sq: "Albanian", alz: "Alur", am: "Amharic", ar: "Arabic", hy: "Armenian",
+  as: "Assamese", av: "Avar", awa: "Awadhi", ay: "Aymara", az: "Azerbaijani",
+  ban: "Balinese", bal: "Baluchi", bm: "Bambara", bci: "Baoulé", ba: "Bashkir",
+  eu: "Basque", btx: "Batak Karo", bts: "Batak Simalungun", bbc: "Batak Toba",
+  be: "Belarusian", bem: "Bemba", bn: "Bengali", bew: "Betawi", bho: "Bhojpuri",
+  bik: "Bikol", bs: "Bosnian", br: "Breton", bg: "Bulgarian", bua: "Buryat",
+  yue: "Cantonese", ca: "Catalan", ceb: "Cebuano", ch: "Chamorro", ce: "Chechen",
+  ny: "Chichewa", "zh-CN": "Chinese (Simplified)", "zh-TW": "Chinese (Traditional)",
+  zh: "Chinese", chk: "Chuukese", cv: "Chuvash", co: "Corsican", crh: "Crimean Tatar",
+  hr: "Croatian", cs: "Czech", da: "Danish", fa: "Persian (Farsi)", dv: "Dhivehi",
+  din: "Dinka", doi: "Dogri", dov: "Dombe", nl: "Dutch", dyu: "Dyula", dz: "Dzongkha",
+  en: "English", eo: "Esperanto", et: "Estonian", ee: "Ewe", fo: "Faroese",
+  fj: "Fijian", fil: "Filipino", tl: "Filipino", fi: "Finnish", fon: "Fon",
+  fr: "French", fy: "Frisian", fur: "Friulian", ff: "Fulani", gaa: "Ga",
+  gl: "Galician", ka: "Georgian", de: "German", el: "Greek", gn: "Guarani",
+  gu: "Gujarati", ht: "Haitian Creole", cnh: "Hakha Chin", ha: "Hausa", haw: "Hawaiian",
+  iw: "Hebrew", he: "Hebrew", hil: "Hiligaynon", hi: "Hindi", hmn: "Hmong",
+  hu: "Hungarian", hrx: "Hunsrik", is: "Icelandic", ig: "Igbo", ilo: "Ilocano",
+  id: "Indonesian", ga: "Irish", it: "Italian", ja: "Japanese", jw: "Javanese",
+  jv: "Javanese", kn: "Kannada", pam: "Kapampangan", kk: "Kazakh", km: "Khmer",
+  cgg: "Kiga", rw: "Kinyarwanda", ktu: "Kituba", gom: "Konkani", ko: "Korean",
+  kri: "Krio", ku: "Kurdish (Kurmanji)", ckb: "Kurdish (Sorani)", ky: "Kyrgyz",
+  lo: "Lao", ltg: "Latgalian", la: "Latin", lv: "Latvian", lij: "Ligurian",
+  li: "Limburgish", ln: "Lingala", lt: "Lithuanian", lmo: "Lombard", lg: "Luganda",
+  luo: "Luo", lb: "Luxembourgish", mk: "Macedonian", mai: "Maithili", mak: "Makassar",
+  mg: "Malagasy", ms: "Malay", ml: "Malayalam", mt: "Maltese", mi: "Maori",
+  mr: "Marathi", mh: "Marshallese", mwr: "Marwadi", mfe: "Mauritian Creole",
+  "mni-Mtei": "Meiteilon (Manipuri)", min: "Minang", lus: "Mizo", mn: "Mongolian",
+  my: "Myanmar (Burmese)", nhe: "Nahuatl (Eastern Huasteca)", ndc: "Ndau",
+  nr: "Ndebele (South)", new: "Nepalbhasa (Newari)", ne: "Nepali", no: "Norwegian",
+  nus: "Nuer", oc: "Occitan", or: "Odia (Oriya)", om: "Oromo", pag: "Pangasinan",
+  pap: "Papiamento", ps: "Pashto", pl: "Polish", pt: "Portuguese",
+  "pt-PT": "Portuguese (Portugal)", pa: "Punjabi", "pa-Arab": "Punjabi (Shahmukhi)",
+  qu: "Quechua", rom: "Romani", ro: "Romanian", rn: "Rundi", ru: "Russian",
+  sm: "Samoan", sg: "Sango", sa: "Sanskrit", sat: "Santali", gd: "Scots Gaelic",
+  nso: "Sepedi", sr: "Serbian", st: "Sesotho", crs: "Seychellois Creole", shn: "Shan",
+  sn: "Shona", scn: "Sicilian", szl: "Silesian", sd: "Sindhi", si: "Sinhala",
+  sk: "Slovak", sl: "Slovenian", so: "Somali", es: "Spanish", su: "Sundanese",
+  sw: "Swahili", ss: "Swati", sv: "Swedish", tg: "Tajik", ta: "Tamil", tt: "Tatar",
+  te: "Telugu", tet: "Tetum", th: "Thai", ti: "Tigrinya", ts: "Tsonga", tn: "Tswana",
+  tr: "Turkish", tk: "Turkmen", ak: "Twi (Akan)", uk: "Ukrainian", ur: "Urdu",
+  ug: "Uyghur", uz: "Uzbek", vi: "Vietnamese", cy: "Welsh", xh: "Xhosa", yi: "Yiddish",
+  yo: "Yoruba", yua: "Yucatec Maya", zu: "Zulu",
+};
+
+// Legacy / duplicate code spellings — keep one canonical entry per language.
+const OMIT = new Set(["iw", "jw", "fil"]);
+
+// Codes the gpt-realtime-translate model supports as spoken output. Everything
+// else is text-only (subtitles), surfaced with a marker in the UI.
+const REALTIME_VOICE = new Set([
+  "ja", "en", "zh", "ko", "es", "fr", "de", "it", "pt", "ru", "hi", "ar", "nl",
+  "id", "th", "vi", "tr", "pl", "uk", "sv", "da", "fi", "no", "cs", "el", "he",
+  "ro", "hu", "ms", "bn", "ta", "ur", "fa", "tl", "sk", "bg", "hr", "sr",
+]);
+
+// Hand-curated native names + flags (nicer than an autonym lookup, and stable
+// across SSR/client so there's no hydration mismatch). `common` languages show
+// up-front in the picker.
+const CURATED: Record<string, { name?: string; flag?: string; common?: boolean }> = {
+  ja: { name: "日本語", flag: "🇯🇵", common: true },
+  en: { name: "English", flag: "🇺🇸", common: true },
+  zh: { name: "中文", flag: "🇨🇳", common: true },
+  ko: { name: "한국어", flag: "🇰🇷", common: true },
+  es: { name: "Español", flag: "🇪🇸", common: true },
+  fr: { name: "Français", flag: "🇫🇷", common: true },
+  de: { name: "Deutsch", flag: "🇩🇪", common: true },
+  it: { name: "Italiano", flag: "🇮🇹", common: true },
+  pt: { name: "Português", flag: "🇧🇷", common: true },
+  ru: { name: "Русский", flag: "🇷🇺", common: true },
+  hi: { name: "हिन्दी", flag: "🇮🇳", common: true },
+  ar: { name: "العربية", flag: "🇸🇦", common: true },
+  nl: { name: "Nederlands", flag: "🇳🇱", common: true },
+  id: { name: "Bahasa Indonesia", flag: "🇮🇩" },
+  th: { name: "ไทย", flag: "🇹🇭" },
+  vi: { name: "Tiếng Việt", flag: "🇻🇳" },
+  tr: { name: "Türkçe", flag: "🇹🇷" },
+  pl: { name: "Polski", flag: "🇵🇱" },
+  uk: { name: "Українська", flag: "🇺🇦" },
+  sv: { name: "Svenska", flag: "🇸🇪" },
+  da: { name: "Dansk", flag: "🇩🇰" },
+  fi: { name: "Suomi", flag: "🇫🇮" },
+  no: { name: "Norsk", flag: "🇳🇴" },
+  cs: { name: "Čeština", flag: "🇨🇿" },
+  el: { name: "Ελληνικά", flag: "🇬🇷" },
+  he: { name: "עברית", flag: "🇮🇱" },
+  ro: { name: "Română", flag: "🇷🇴" },
+  hu: { name: "Magyar", flag: "🇭🇺" },
+  ms: { name: "Bahasa Melayu", flag: "🇲🇾" },
+  bn: { name: "বাংলা", flag: "🇧🇩" },
+  ta: { name: "தமிழ்", flag: "🇮🇳" },
+  ur: { name: "اردو", flag: "🇵🇰" },
+  fa: { name: "فارسی", flag: "🇮🇷" },
+  tl: { name: "Filipino", flag: "🇵🇭" },
+  sk: { name: "Slovenčina", flag: "🇸🇰" },
+  bg: { name: "Български", flag: "🇧🇬" },
+  hr: { name: "Hrvatski", flag: "🇭🇷" },
+  sr: { name: "Српски", flag: "🇷🇸" },
+  // Variants kept from the long tail — flag only, English label as name.
+  "zh-CN": { flag: "🇨🇳" },
+  "zh-TW": { flag: "🇹🇼" },
+  "pt-PT": { flag: "🇵🇹" },
+};
+
+// Common languages first (in this order), then alphabetical by English label.
+const PRIORITY = [
+  "ja", "en", "zh", "ko", "es", "fr", "de", "it", "pt", "ru", "hi", "ar", "nl",
 ];
+
+export const LANGUAGES: Language[] = Object.entries(LANGUAGE_NAMES_EN)
+  .filter(([code]) => !OMIT.has(code))
+  .map(([code, label]) => {
+    const c = CURATED[code];
+    return {
+      code,
+      label,
+      name: c?.name ?? label,
+      flag: c?.flag ?? "🌐",
+      common: c?.common ?? false,
+      realtime: REALTIME_VOICE.has(code),
+    };
+  })
+  .sort((a, b) => {
+    const pa = PRIORITY.indexOf(a.code);
+    const pb = PRIORITY.indexOf(b.code);
+    if (pa !== -1 || pb !== -1) {
+      return (pa === -1 ? 999 : pa) - (pb === -1 ? 999 : pb);
+    }
+    return a.label.localeCompare(b.label);
+  });
 
 const BY_CODE = new Map(LANGUAGES.map((l) => [l.code, l]));
 
 export function getLanguage(code: string): Language {
   return BY_CODE.get(code) ?? LANGUAGES[0];
+}
+
+/** Whether a language has live (spoken) realtime translation, vs. text only. */
+export function isRealtimeVoice(code: string): boolean {
+  return REALTIME_VOICE.has(code);
 }
 
 // Latin-script output languages (used to disambiguate a Latin transcript).
