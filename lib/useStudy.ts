@@ -47,6 +47,10 @@ export interface GrammarItem {
   exampleLocal?: string;
   count?: number;
   at?: number;
+  /** Total ms the learner has dwelt on this card while reviewing. */
+  dwell?: number;
+  /** Whether the learner has actually looked at this card at least once. */
+  seen?: boolean;
 }
 
 export interface StudySet {
@@ -406,6 +410,17 @@ export function useStudy() {
     grammarStore.set(grammarStore.get().filter((p) => grammarKey(p) !== key));
   }, []);
 
+  // Record viewing time on a grammar card (see addVocabDwell).
+  const addGrammarDwell = useCallback((key: string, ms: number) => {
+    if (!(ms > 0)) return;
+    const list = grammarStore.get();
+    const idx = list.findIndex((p) => grammarKey(p) === key);
+    if (idx < 0) return;
+    const next = list.slice();
+    next[idx] = { ...next[idx], dwell: (next[idx].dwell ?? 0) + ms, seen: true };
+    grammarStore.set(next);
+  }, []);
+
   // Whether a near-identical item is already saved (for the ＋/保存済み state).
   const hasVocab = useCallback(
     (item: VocabItem) =>
@@ -436,6 +451,7 @@ export function useStudy() {
     addVocabDwell,
     saveGrammar,
     removeGrammar,
+    addGrammarDwell,
     hasVocab,
     hasGrammar,
   };
