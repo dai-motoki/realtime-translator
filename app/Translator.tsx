@@ -9,6 +9,7 @@ import {
 } from "react";
 import { LANGUAGES, getLanguage, detectLanguage } from "@/lib/languages";
 import { useTranslator, type Segment } from "@/lib/useTranslator";
+import { Typewriter } from "./Typewriter";
 import {
   detectPlatform,
   getMicPermission,
@@ -578,7 +579,15 @@ function ChatMsg({
       <div className="msg-bubble">
         {/* what was actually said (top), then a translation per language */}
         <p className="msg-main">
-          {original || "…"}
+          {original ? (
+            pending ? (
+              <Typewriter text={original} />
+            ) : (
+              original
+            )
+          ) : (
+            "…"
+          )}
           {refined && (
             <span className="msg-badge" title="GPT-5.5で最適化済み">
               ✨
@@ -590,7 +599,15 @@ function ChatMsg({
             <span className="msg-trans-flag" aria-hidden>
               {getLanguage(tg.lang).flag}
             </span>
-            {tg.text || "…"}
+            {tg.text ? (
+              pending ? (
+                <Typewriter text={tg.text} />
+              ) : (
+                tg.text
+              )
+            ) : (
+              "…"
+            )}
           </p>
         ))}
       </div>
@@ -634,12 +651,22 @@ function LiveTranscript({
           {s.source && <p className="live-source">{s.source}</p>}
         </div>
       ))}
-      {hasPartial && (
-        <div className="live-line current">
-          <p className="live-target">{firstVal(partialTargets) || "…"}</p>
-          {partialSource && <p className="live-source">{partialSource}</p>}
-        </div>
-      )}
+      {hasPartial &&
+        (() => {
+          const tgt = firstVal(partialTargets);
+          return (
+            <div className="live-line current">
+              <p className="live-target">
+                {tgt ? <Typewriter text={tgt} /> : "…"}
+              </p>
+              {partialSource && (
+                <p className="live-source">
+                  <Typewriter text={partialSource} />
+                </p>
+              )}
+            </div>
+          );
+        })()}
     </div>
   );
 }
