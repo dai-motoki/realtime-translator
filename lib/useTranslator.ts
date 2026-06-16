@@ -217,17 +217,14 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         if (!isPrimary) return;
         const delta = evt.delta ?? "";
         const langs = autoLangsRef.current;
-        if (langs && delta) {
+        // Decide the utterance's language ONCE, from the first clear signal,
+        // and keep it for the whole continuous utterance. A stray token
+        // (e.g. "AI" inside a Japanese sentence) must NOT split the line or
+        // move it to the other side. A real speaker change is separated by a
+        // pause, which finalizes the segment on its own.
+        if (langs && delta && segLangRef.current == null) {
           const dLang = detectLanguage(delta, langs);
           if (dLang) {
-            // Speaker switched language → close the previous line first.
-            if (
-              segLangRef.current &&
-              dLang !== segLangRef.current &&
-              srcBuf.current.trim()
-            ) {
-              finalizeRef.current();
-            }
             segLangRef.current = dLang;
             refreshPartialTargets();
           }
