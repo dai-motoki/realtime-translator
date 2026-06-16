@@ -54,13 +54,19 @@ export function StudyPanel({
   onToggleAuto: () => void;
 }) {
   const tx = useT();
-  const [tab, setTab] = useState<Tab>("learn");
+  // Default to the saved word list when Auto-collect is ON (the manual "learn"
+  // tab is hidden in that case).
+  const [tab, setTab] = useState<Tab>(auto ? "vocab" : "learn");
   // Flashcard-style review: hide meanings until each card is tapped.
   const [review, setReview] = useState(false);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   // Language filters for the saved lists ("all" = no filter).
   const [vocabLang, setVocabLang] = useState("all");
   const [grammarLang, setGrammarLang] = useState("all");
+
+  // The "learn" tab is hidden while Auto-collect is ON; fall back to the word
+  // list so the body is never blank (derived, so no extra render).
+  const activeTab: Tab = auto && tab === "learn" ? "vocab" : tab;
 
   // Close on Escape for desktop use.
   useEffect(() => {
@@ -118,21 +124,25 @@ export function StudyPanel({
         </header>
 
         <div className="study-tabs">
+          {/* With Auto-collect ON, words & grammar accumulate on their own, so
+              the manual "Learn from conversation" tab is redundant — hide it. */}
+          {!auto && (
+            <button
+              className={`study-tab${activeTab === "learn" ? " on" : ""}`}
+              onClick={() => setTab("learn")}
+            >
+              {tx("Learn from conversation")}
+            </button>
+          )}
           <button
-            className={`study-tab${tab === "learn" ? " on" : ""}`}
-            onClick={() => setTab("learn")}
-          >
-            {tx("Learn from conversation")}
-          </button>
-          <button
-            className={`study-tab${tab === "vocab" ? " on" : ""}`}
+            className={`study-tab${activeTab === "vocab" ? " on" : ""}`}
             onClick={() => setTab("vocab")}
           >
             {tx("Vocabulary")}
             {study.savedVocab.length ? ` (${study.savedVocab.length})` : ""}
           </button>
           <button
-            className={`study-tab${tab === "grammar" ? " on" : ""}`}
+            className={`study-tab${activeTab === "grammar" ? " on" : ""}`}
             onClick={() => setTab("grammar")}
           >
             {tx("Grammar notes")}
@@ -141,13 +151,13 @@ export function StudyPanel({
         </div>
 
         <div
-          className={`study-body${tab === "vocab" || tab === "grammar" ? " deck-mode" : ""}`}
+          className={`study-body${activeTab === "vocab" || activeTab === "grammar" ? " deck-mode" : ""}`}
         >
-          {tab === "learn" && (
+          {activeTab === "learn" && (
             <LearnTab study={study} speech={speech} lines={lines} />
           )}
 
-          {tab === "vocab" && (
+          {activeTab === "vocab" && (
             <div className="study-list study-list--deck">
               <div className="study-listhead">
                 <span>
@@ -206,7 +216,7 @@ export function StudyPanel({
             </div>
           )}
 
-          {tab === "grammar" && (
+          {activeTab === "grammar" && (
             <div className="study-list study-list--deck">
               <LangFilter
                 langs={langsIn(study.savedGrammar)}
