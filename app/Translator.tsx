@@ -22,7 +22,12 @@ import {
 } from "@/lib/locale";
 import { useSpeech } from "@/lib/useSpeech";
 import { useStudy, type StudyLine } from "@/lib/useStudy";
+import {
+  useConversations,
+  type LoggedSegment,
+} from "@/lib/useConversations";
 import { StudyPanel } from "./StudyPanel";
+import { LogPanel } from "./LogPanel";
 import { Typewriter } from "./Typewriter";
 import {
   detectPlatform,
@@ -68,6 +73,9 @@ export default function Translator() {
   // Vocabulary + grammar study built from the conversation, saved on-device.
   const study = useStudy();
   const [studyOpen, setStudyOpen] = useState(false);
+  // Saved conversation logs + auto-generated minutes (localStorage for now).
+  const convos = useConversations();
+  const [logOpen, setLogOpen] = useState(false);
   // When on, new lines are auto-filed into the 単語帳 / 文法ノート as you talk.
   const [autoStudy, setAutoStudy] = useState(true);
 
@@ -272,6 +280,54 @@ export default function Translator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t.segments.length]);
 
+  // ---- Conversation log + auto minutes ----
+  // Snapshot the just-finished conversation into the on-device log, which also
+  // kicks off automatic 議事録 (minutes) generation. The store dedupes by
+  // content, so a stop-then-clear can't file the same conversation twice.
+  const archiveConv = convos.archive;
+  const archiveCurrent = useCallback(() => {
+    const segs = t.segments;
+    if (segs.length === 0) return;
+    const logged: LoggedSegment[] = segs.map((s) => ({
+      source: s.source,
+      sourceLang: s.sourceLang,
+      sourceReading: s.sourceReading,
+      targets: s.targets,
+      readings: s.readings,
+      at: s.at,
+    }));
+    archiveConv({
+      mode,
+      langs: mode === "talk" ? convLangs : [targetLang],
+      lang: baseLang ?? "ja",
+      segments: logged,
+    });
+  }, [t.segments, mode, convLangs, targetLang, baseLang, archiveConv]);
+
+  // Call the latest archive fn from the status effect without making that effect
+  // depend on (and re-run for) every render.
+  const archiveRef = useRef(archiveCurrent);
+  useEffect(() => {
+    archiveRef.current = archiveCurrent;
+  });
+
+  // Auto-archive whenever a live session ends (停止／終了／モード切替). The
+  // finalized segments are still in state at that moment.
+  const prevStatusRef = useRef(t.status);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = t.status;
+    if ((prev === "live" || prev === "connecting") && t.status === "idle") {
+      archiveRef.current();
+    }
+  }, [t.status]);
+
+  // "履歴を消す": archive the conversation before wiping it off the screen.
+  const clearHistory = useCallback(() => {
+    archiveRef.current();
+    t.clear();
+  }, [t]);
+
   const switchMode = useCallback(
     (next: Mode) => {
       if (next === mode) return;
@@ -473,6 +529,17 @@ export default function Translator() {
             )}
           </button>
           <button
+            className="audio-toggle log-open"
+            onClick={() => setLogOpen(true)}
+            title="保存した会話ログと議事録を見る"
+          >
+            <span className="audio-ico">🗂</span>
+            ログ
+            {convos.conversations.length > 0 && (
+              <span className="study-count">{convos.conversations.length}</span>
+            )}
+          </button>
+          <button
             className={`audio-toggle flip ${flipped ? "on" : ""}`}
             onClick={() => setFlipped((v) => !v)}
             aria-pressed={flipped}
@@ -482,7 +549,7 @@ export default function Translator() {
             相手向き
           </button>
           {t.segments.length > 0 && (
-            <button className="ghost" onClick={t.clear}>
+            <button className="ghost" onClick={clearHistory}>
               履歴を消す
             </button>
           )}
@@ -513,6 +580,12 @@ export default function Translator() {
         lines={studyLines}
         auto={autoStudy}
         onToggleAuto={() => setAutoStudy((v) => !v)}
+      />
+
+      <LogPanel
+        open={logOpen}
+        onClose={() => setLogOpen(false)}
+        convos={convos}
       />
     </div>
   );
