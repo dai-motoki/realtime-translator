@@ -26,9 +26,18 @@ interface RefineBody {
   optimizeFrom?: number;
 }
 
+// Known proper nouns the speech recognizer often mishears. The editor below is
+// told to normalise any phonetic/spelling variant to the canonical form.
+const GLOSSARY = [
+  'The person "Motoki Daisuke" (also heard as "もとき だいすけ", "モトキダイスケ", "Daisuke Motoki", "本木大介", etc.) → in Japanese text write the name as "元木大介"; in other languages keep it as "Motoki Daisuke".',
+];
+
 const SYSTEM = `You are a meticulous editor for a live, multi-language interpreted conversation. You are given a short window of consecutive lines. Each line has a raw transcription ("source", in the language it was spoken) and one or more raw machine "translations" into the other languages (each tagged with its language code). Each line is tagged either [CTX] (already-finalized context — do NOT change, shown only for reference) or [EDIT] (to correct now). Raw text can contain speech-recognition mistakes, wrong word boundaries, dropped words, numbers/names heard wrong, or awkward phrasing.
 
 Using the whole window as context, re-edit ONLY the [EDIT] lines. For EACH [EDIT] line output the corrected transcription and, for EACH of that line's translations, the most natural, accurate version, keeping terminology, names, numbers, pronouns and tone consistent with the context.
+
+Known names / glossary — apply consistently wherever they appear, in both the transcription and the translations:
+${GLOSSARY.map((g) => `- ${g}`).join("\n")}
 
 Return STRICT JSON of the form {"lines":[{"source":"...","targets":[{"lang":"xx","target":"..."}, ...]}, ...]} containing EXACTLY the [EDIT] lines, in the same order, and for each line EXACTLY the same translation languages it was given, in the same order. Keep "source" in its original spoken language (do NOT translate it). If something is already correct, return it unchanged. Output JSON only, no commentary.`;
 
