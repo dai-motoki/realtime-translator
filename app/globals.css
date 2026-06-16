@@ -1216,7 +1216,8 @@ select {
   gap: 11px;
   padding-bottom: 14px;
 }
-.study-deck .vcard {
+.study-deck .vcard,
+.study-deck .gcard {
   scroll-snap-align: start;
   scroll-snap-stop: always;
   /* Fill the visible deck so only one card shows at a time. */

@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { getLanguage, LANGUAGES } from "@/lib/languages";
 import { useT, useUiLang } from "@/lib/i18n";
 import { useSpeech } from "@/lib/useSpeech";
@@ -133,7 +140,9 @@ export function StudyPanel({
           </button>
         </div>
 
-        <div className={`study-body${tab === "vocab" ? " deck-mode" : ""}`}>
+        <div
+          className={`study-body${tab === "vocab" || tab === "grammar" ? " deck-mode" : ""}`}
+        >
           {tab === "learn" && (
             <LearnTab study={study} speech={speech} lines={lines} />
           )}
@@ -170,20 +179,35 @@ export function StudyPanel({
                   )}
                 </p>
               ) : (
-                <SavedVocabList
-                  study={study}
-                  speech={speech}
+                <SavedDeck
+                  items={study.savedVocab}
                   langFilter={vocabLang}
-                  review={review}
-                  revealed={revealed}
-                  onToggleReveal={toggleReveal}
+                  keyOf={vocabKey}
+                  onDwell={study.addVocabDwell}
+                  emptyText={tx("No words in this language yet.")}
+                  renderCard={(v, cardRef) => {
+                    const key = vocabKey(v);
+                    const hidden = review && !revealed.has(key);
+                    return (
+                      <VocabCard
+                        item={v}
+                        speech={speech}
+                        hiddenMeaning={hidden}
+                        onToggle={() => review && toggleReveal(key)}
+                        saved
+                        showStatus
+                        onRemove={() => study.removeVocab(key)}
+                        cardRef={cardRef}
+                      />
+                    );
+                  }}
                 />
               )}
             </div>
           )}
 
           {tab === "grammar" && (
-            <div className="study-list">
+            <div className="study-list study-list--deck">
               <LangFilter
                 langs={langsIn(study.savedGrammar)}
                 value={grammarLang}
@@ -196,21 +220,22 @@ export function StudyPanel({
                   )}
                 </p>
               ) : (
-                study.savedGrammar
-                  .filter(
-                    (g) => grammarLang === "all" || g.lang === grammarLang,
-                  )
-                  .map((g) => {
-                    const key = grammarKey(g);
-                    return (
-                      <GrammarCard
-                        key={key}
-                        item={g}
-                        saved
-                        onRemove={() => study.removeGrammar(key)}
-                      />
-                    );
-                  })
+                <SavedDeck
+                  items={study.savedGrammar}
+                  langFilter={grammarLang}
+                  keyOf={grammarKey}
+                  onDwell={study.addGrammarDwell}
+                  emptyText={tx("No grammar points in this language yet.")}
+                  renderCard={(g, cardRef) => (
+                    <GrammarCard
+                      item={g}
+                      saved
+                      showStatus
+                      onRemove={() => study.removeGrammar(grammarKey(g))}
+                      cardRef={cardRef}
+                    />
+                  )}
+                />
               )}
             </div>
           )}
@@ -345,78 +370,77 @@ function useDeckDwell(flush: (key: string, ms: number) => void) {
   return { deckRef, cardRef };
 }
 
-// The saved Vocabulary list: one card per screen (snap scroll), ordered for
-// learning — unseen words first, then the ones you dwelt on longest. The order
-// is frozen while you read (it only recomputes when the set of words or the
-// language filter changes) so cards don't jump as dwell times tick up.
-function SavedVocabList({
-  study,
-  speech,
+// A saved list shown as a one-card-per-screen snap deck, ordered for learning —
+// items you haven't looked at yet first, then the ones you dwelt on longest. The
+// order is frozen while you read (it only recomputes when the set of items or
+// the language filter changes) so cards don't jump as dwell times tick up. Used
+// for both the Vocabulary and Grammar lists.
+function SavedDeck<
+  T extends {
+    lang: string;
+    count?: number;
+    at?: number;
+    dwell?: number;
+    seen?: boolean;
+  },
+>({
+  items,
   langFilter,
-  review,
-  revealed,
-  onToggleReveal,
+  keyOf,
+  onDwell,
+  emptyText,
+  renderCard,
 }: {
-  study: Study;
-  speech: Speech;
+  items: T[];
   langFilter: string;
-  review: boolean;
-  revealed: Set<string>;
-  onToggleReveal: (key: string) => void;
+  keyOf: (item: T) => string;
+  onDwell: (key: string, ms: number) => void;
+  emptyText: string;
+  renderCard: (
+    item: T,
+    cardRef: (el: HTMLDivElement | null) => void,
+  ) => ReactNode;
 }) {
-  const tx = useT();
-  const { deckRef, cardRef } = useDeckDwell(study.addVocabDwell);
+  const { deckRef, cardRef } = useDeckDwell(onDwell);
   const filtered = useMemo(
-    () =>
-      study.savedVocab.filter(
-        (v) => langFilter === "all" || v.lang === langFilter,
-      ),
-    [study.savedVocab, langFilter],
+    () => items.filter((it) => langFilter === "all" || it.lang === langFilter),
+    [items, langFilter],
   );
 
-  const keySig = filtered.map(vocabKey).join("|");
+  const keySig = filtered.map(keyOf).join("|");
   const [orderedKeys, setOrderedKeys] = useState<string[]>([]);
   // Keep the latest list available to the resort effect without making it a
   // dependency, so dwell ticks don't re-trigger (and reorder) the list.
   const filteredRef = useRef(filtered);
+  const keyOfRef = useRef(keyOf);
   useEffect(() => {
     filteredRef.current = filtered;
+    keyOfRef.current = keyOf;
   });
   useEffect(() => {
-    setOrderedKeys(sortForLearning(filteredRef.current).map(vocabKey));
+    setOrderedKeys(sortForLearning(filteredRef.current).map(keyOfRef.current));
   }, [keySig]);
 
   const display = useMemo(() => {
-    const byKey = new Map(filtered.map((v) => [vocabKey(v), v]));
+    const byKey = new Map(filtered.map((it) => [keyOf(it), it]));
     const known = new Set(orderedKeys);
     const inOrder = orderedKeys
       .map((k) => byKey.get(k))
-      .filter((v): v is VocabItem => !!v);
-    const extras = filtered.filter((v) => !known.has(vocabKey(v)));
+      .filter((it): it is T => !!it);
+    const extras = filtered.filter((it) => !known.has(keyOf(it)));
     return [...inOrder, ...extras];
+    // keyOf is stable per caller; excluded to avoid needless recompute.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered, orderedKeys]);
 
   if (display.length === 0) {
-    return <p className="study-empty">{tx("No words in this language yet.")}</p>;
+    return <p className="study-empty">{emptyText}</p>;
   }
   return (
     <div className="study-deck" ref={deckRef}>
-      {display.map((v) => {
-        const key = vocabKey(v);
-        const hidden = review && !revealed.has(key);
-        return (
-          <VocabCard
-            key={key}
-            item={v}
-            speech={speech}
-            hiddenMeaning={hidden}
-            onToggle={() => review && onToggleReveal(key)}
-            saved
-            showStatus
-            onRemove={() => study.removeVocab(key)}
-            cardRef={cardRef(key)}
-          />
-        );
+      {display.map((it) => {
+        const key = keyOf(it);
+        return <Fragment key={key}>{renderCard(it, cardRef(key))}</Fragment>;
       })}
     </div>
   );
@@ -615,21 +639,31 @@ function GrammarCard({
   saved,
   onSave,
   onRemove,
+  showStatus,
+  cardRef,
 }: {
   item: GrammarItem;
   saved?: boolean;
   onSave?: () => void;
   onRemove?: () => void;
+  /** Show the "not reviewed yet" marker (saved list only). */
+  showStatus?: boolean;
+  cardRef?: (el: HTMLDivElement | null) => void;
 }) {
   const tx = useT();
   const flag = getLanguage(item.lang).flag;
   return (
-    <div className="gcard">
+    <div className="gcard" ref={cardRef}>
       <div className="gcard-top">
         <span className="gcard-flag" aria-hidden>
           {flag}
         </span>
         <span className="gcard-title">{item.title}</span>
+        {showStatus && !item.seen && (
+          <span className="study-new" title={tx("Not reviewed yet")}>
+            {tx("New")}
+          </span>
+        )}
         {(item.count ?? 1) > 1 && (
           <span
             className="study-times"
