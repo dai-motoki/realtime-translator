@@ -8,6 +8,17 @@
 // safety net for anything not listed here.
 
 export const UI_STRINGS: string[] = [
+  // ---- Translated FIRST (most visible) ----
+  // The optimization indicator (shown in the target language while translating)
+  // and the big centered empty state — so switching language changes the
+  // on-screen text here first.
+  "Optimizing the language…",
+  "Auto-translate into every language",
+  "Press “Start conversation” and just speak in any of the languages you picked. We detect the spoken language automatically and translate it into all the others, shown as a chat.",
+  "Live translation",
+  "Speak — we translate what we hear in real time.",
+  "Pick an output language and press “Start translating”. For talks, videos and more, we translate the audio you hear as subtitles.",
+
   // ---- Header / status ----
   "Optimizing the latest conversation…",
   "Conversation",
@@ -47,13 +58,6 @@ export const UI_STRINGS: string[] = [
 
   // ---- Speak button ----
   "Read aloud",
-
-  // ---- Empty states ----
-  "Auto-translate into every language",
-  "Press “Start conversation” and just speak in any of the languages you picked. We detect the spoken language automatically and translate it into all the others, shown as a chat.",
-  "Live translation",
-  "Speak — we translate what we hear in real time.",
-  "Pick an output language and press “Start translating”. For talks, videos and more, we translate the audio you hear as subtitles.",
 
   // ---- Message badge ----
   "Optimized with GPT-5.5",
@@ -115,9 +119,6 @@ export const UI_STRINGS: string[] = [
 
   // ---- Speaker diarization ----
   "Speaker {n}",
-
-  // ---- i18n status ----
-  "Translating…",
 
   // ---- Hook / network errors (English source; translated like everything else) ----
   "Failed to generate study material.",
