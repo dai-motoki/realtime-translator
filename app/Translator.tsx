@@ -419,17 +419,21 @@ export default function Translator() {
   const live = t.status === "live";
   const connecting = t.status === "connecting";
 
-  // Compact view of the conversation for the study generator.
+  // Compact view of the conversation for the study generator. Only optimized
+  // (✨ refined) lines are included — feeding raw, pre-optimization text makes
+  // the 単語帳 fill up with noisy, low-quality example sentences.
   const studyLines: StudyLine[] = useMemo(
     () =>
-      t.segments.map((s) => ({
-        source: s.source,
-        sourceLang: s.sourceLang,
-        targets: Object.entries(s.targets).map(([lang, target]) => ({
-          lang,
-          target,
+      t.segments
+        .filter((s) => s.refined)
+        .map((s) => ({
+          source: s.source,
+          sourceLang: s.sourceLang,
+          targets: Object.entries(s.targets).map(([lang, target]) => ({
+            lang,
+            target,
+          })),
         })),
-      })),
     [t.segments],
   );
 
@@ -444,11 +448,15 @@ export default function Translator() {
     uiLangRef.current = uiLang;
   });
 
-  // Auto-accumulation: a few seconds after the conversation grows, file any new
-  // lines into the saved 単語帳 / 文法ノート. Dedup makes re-sends harmless.
+  // Auto-accumulation: a few seconds after a line has been OPTIMIZED (not just
+  // spoken), file any newly-optimized lines into the saved 単語帳 / 文法ノート.
+  // Triggering on the optimized-line count (rather than the raw segment count)
+  // means refinement, which finishes asynchronously after a line appears, is
+  // what kicks this off — so only clean, optimized text reaches the 単語帳.
+  // Dedup makes re-sends harmless.
   const studiedRef = useRef(0);
   useEffect(() => {
-    const n = t.segments.length;
+    const n = studyLines.length; // optimized (✨) lines only
     if (n < studiedRef.current) studiedRef.current = n; // history cleared
     if (!autoStudy || n <= studiedRef.current) return;
     const id = window.setTimeout(() => {
@@ -459,7 +467,7 @@ export default function Translator() {
       void accumulateRef.current(lines.slice(from), uiLangRef.current);
     }, 5000);
     return () => window.clearTimeout(id);
-  }, [t.segments.length, autoStudy]);
+  }, [studyLines.length, autoStudy]);
 
   const micBlocked =
     micPerm === "denied" ||
