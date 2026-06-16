@@ -94,6 +94,10 @@ export const UI_STRINGS: string[] = [
   "Tap to show the meaning",
   "Delete",
   "Appeared {n} times",
+  "All",
+  "New",
+  "Not reviewed yet",
+  "No words in this language yet.",
 
   // ---- Log / minutes panel ----
   "Minutes",
