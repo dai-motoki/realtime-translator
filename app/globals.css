@@ -325,6 +325,43 @@ select {
   background: var(--bg-elev-2);
 }
 
+/* Conversation language picker (multi-select chips) */
+.langchips {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 16px 6px;
+}
+.langchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg-dim);
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+}
+.langchip-flag {
+  font-size: 16px;
+  line-height: 1;
+}
+.langchip.on {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.langchips.disabled {
+  opacity: 0.55;
+}
+.langchips.disabled .langchip {
+  pointer-events: none;
+}
+
 /* ---------------- Transcript ---------------- */
 
 .transcript {
@@ -489,6 +526,30 @@ select {
 .msg.b .msg-sub {
   border-top-color: rgba(0, 0, 0, 0.1);
   color: #5b6470;
+}
+/* One translation line per other language, below the spoken text. */
+.msg-trans {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
+  font-size: 14.5px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.msg-trans-flag {
+  flex: 0 0 auto;
+  font-size: 14px;
+}
+.msg.a .msg-trans {
+  border-top-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.92);
+}
+.msg.b .msg-trans {
+  border-top-color: rgba(0, 0, 0, 0.1);
+  color: #2b3038;
 }
 .msg-badge {
   margin-left: 6px;

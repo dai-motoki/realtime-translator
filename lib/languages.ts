@@ -47,27 +47,35 @@ function scriptOf(text: string): string | null {
 }
 
 /**
- * For a known two-language conversation pair, decide which language `text` is
- * written in (used to auto-pick the translation direction). Returns null when
- * the two languages share a script and can't be told apart from text alone.
+ * For a known set of conversation languages, decide which one `text` is written
+ * in (used to auto-pick the translation direction). Returns null when the text
+ * is in a script shared by several of the languages and can't be told apart
+ * from text alone (e.g. Latin script when two Latin-script languages are in the
+ * set).
+ */
+export function detectLanguage(text: string, langs: string[]): string | null {
+  const s = scriptOf(text);
+  if (!s) return null;
+  const has = (x: string): string | null => (langs.includes(x) ? x : null);
+  if (s === "latin") {
+    const latin = langs.filter((l) => LATIN_LANGS.has(l));
+    return latin.length === 1 ? latin[0] : null;
+  }
+  if (s === "cjk") {
+    // Han characters with no kana ⇒ most likely Chinese; else Japanese.
+    return has("zh") ?? has("ja");
+  }
+  // Other scripts map 1:1 to a language code.
+  return has(s);
+}
+
+/**
+ * Backwards-compatible two-language helper, expressed via {@link detectLanguage}.
  */
 export function detectPairLanguage(
   text: string,
   a: string,
   b: string,
 ): string | null {
-  const s = scriptOf(text);
-  if (!s) return null;
-  const inPair = (x: string): string | null => (a === x ? a : b === x ? b : null);
-  if (s === "latin") {
-    const aL = LATIN_LANGS.has(a);
-    const bL = LATIN_LANGS.has(b);
-    if (aL && !bL) return a;
-    if (bL && !aL) return b;
-    return null;
-  }
-  if (s === "cjk") {
-    return inPair("zh") ?? inPair("ja");
-  }
-  return inPair(s);
+  return detectLanguage(text, [a, b]);
 }
