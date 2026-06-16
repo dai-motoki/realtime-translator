@@ -625,6 +625,29 @@ select {
 .live-target .speak-btn {
   margin-left: 8px;
 }
+/* Pronunciation guide (romaji / pinyin / IPA …) under a line. */
+.msg-reading {
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  font-style: italic;
+  opacity: 0.78;
+  word-break: break-word;
+}
+.msg-reading.sub {
+  margin-left: 21px;
+}
+.msg.a .msg-reading {
+  color: rgba(255, 255, 255, 0.82);
+}
+.msg.b .msg-reading {
+  color: #5b6470;
+}
+.live-line .msg-reading {
+  color: var(--accent);
+  opacity: 0.85;
+}
+
 .msg.pending .msg-bubble {
   opacity: 0.92;
 }

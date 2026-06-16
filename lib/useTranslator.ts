@@ -13,6 +13,10 @@ export interface Segment {
   targets: Record<string, string>;
   rawTargets: Record<string, string>;
   sourceLang: string | null;
+  /** Pronunciation guide for the spoken text (filled in by the refine pass). */
+  sourceReading?: string;
+  /** Pronunciation guide for each translation, keyed by output language. */
+  readings?: Record<string, string>;
   refined?: boolean;
   at: number;
 }

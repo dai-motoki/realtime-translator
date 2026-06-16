@@ -9,6 +9,7 @@ const MODEL = process.env.REFINE_MODEL || "gpt-5.5";
 interface Target {
   lang?: string;
   target?: string;
+  reading?: string;
 }
 interface Line {
   source: string;
@@ -36,10 +37,12 @@ const SYSTEM = `You are a meticulous editor for a live, multi-language interpret
 
 Using the whole window as context, re-edit ONLY the [EDIT] lines. For EACH [EDIT] line output the corrected transcription and, for EACH of that line's translations, the most natural, accurate version, keeping terminology, names, numbers, pronouns and tone consistent with the context.
 
+Also provide a pronunciation guide ("reading") for the corrected transcription ("sourceReading") and for EACH translation. Use the standard reading aid for that language: Hepburn romaji for Japanese, Hanyu Pinyin with tone marks for Chinese, Revised Romanization for Korean, IPA for English and other Latin-script European languages, and the conventional Latin romanization for any other non-Latin script (Arabic, Hindi, Russian, Thai, etc.). Keep each reading concise and on one line. If a reading adds nothing (e.g. simple Latin-script text), you may repeat the text.
+
 Known names / glossary — apply consistently wherever they appear, in both the transcription and the translations:
 ${GLOSSARY.map((g) => `- ${g}`).join("\n")}
 
-Return STRICT JSON of the form {"lines":[{"source":"...","targets":[{"lang":"xx","target":"..."}, ...]}, ...]} containing EXACTLY the [EDIT] lines, in the same order, and for each line EXACTLY the same translation languages it was given, in the same order. Keep "source" in its original spoken language (do NOT translate it). If something is already correct, return it unchanged. Output JSON only, no commentary.`;
+Return STRICT JSON of the form {"lines":[{"source":"...","sourceReading":"...","targets":[{"lang":"xx","target":"...","reading":"..."}, ...]}, ...]} containing EXACTLY the [EDIT] lines, in the same order, and for each line EXACTLY the same translation languages it was given, in the same order. Keep "source" in its original spoken language (do NOT translate it). If something is already correct, return it unchanged. Output JSON only, no commentary.`;
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -64,7 +67,12 @@ export async function POST(request: NextRequest) {
     Response.json({
       lines: targets.map((l) => ({
         source: l.source,
-        targets: targetsOf(l).map((t) => ({ lang: t.lang, target: t.target })),
+        sourceReading: "",
+        targets: targetsOf(l).map((t) => ({
+          lang: t.lang,
+          target: t.target,
+          reading: "",
+        })),
       })),
     });
 
@@ -124,22 +132,29 @@ export async function POST(request: NextRequest) {
     // always return the same languages (in order) that the line came in with.
     const merged = targets.map((orig, i) => {
       const r = out[i] as
-        | { source?: unknown; targets?: unknown }
+        | { source?: unknown; sourceReading?: unknown; targets?: unknown }
         | undefined;
       const rTargets = Array.isArray(r?.targets) ? r.targets : [];
       const byLang = new Map<string, string>();
+      const readingByLang = new Map<string, string>();
       for (const rt of rTargets) {
-        const o = rt as { lang?: unknown; target?: unknown };
+        const o = rt as { lang?: unknown; target?: unknown; reading?: unknown };
         if (typeof o.lang === "string" && typeof o.target === "string") {
           byLang.set(o.lang, o.target);
+        }
+        if (typeof o.lang === "string" && typeof o.reading === "string") {
+          readingByLang.set(o.lang, o.reading);
         }
       }
       return {
         source: typeof r?.source === "string" ? r.source : orig.source,
+        sourceReading:
+          typeof r?.sourceReading === "string" ? r.sourceReading : "",
         targets: targetsOf(orig).map((t) => ({
           lang: t.lang,
           target:
             (t.lang != null && byLang.get(t.lang)) || t.target || "",
+          reading: (t.lang != null && readingByLang.get(t.lang)) || "",
         })),
       };
     });

@@ -25,8 +25,12 @@ import {
 } from "@/lib/platform";
 
 type Mode = "talk" | "live";
-type RefinedTarget = { lang?: string; target?: string };
-type RefinedLine = { source?: string; targets?: RefinedTarget[] };
+type RefinedTarget = { lang?: string; target?: string; reading?: string };
+type RefinedLine = {
+  source?: string;
+  sourceReading?: string;
+  targets?: RefinedTarget[];
+};
 
 // Default conversation languages (speak any one → translated into the others).
 const DEFAULT_CONV_LANGS = ["ja", "en", "zh"];
@@ -81,6 +85,9 @@ export default function Translator() {
 
   // Whether the conversation-language picker is expanded (default: expanded).
   const [langOpen, setLangOpen] = useState(true);
+
+  // Show a pronunciation guide (romaji / pinyin / IPA …) under each line.
+  const [showReading, setShowReading] = useState(true);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -174,18 +181,28 @@ export default function Translator() {
         targets.forEach((s, i) => {
           const r = out?.[i];
           done.add(s.id);
-          // Merge any returned translations back over the existing ones.
+          // Merge any returned translations and pronunciation readings back over
+          // the existing ones.
           const nextTargets = { ...s.targets };
+          const nextReadings = { ...(s.readings ?? {}) };
           if (Array.isArray(r?.targets)) {
             for (const rt of r.targets) {
               if (rt && typeof rt.lang === "string" && typeof rt.target === "string") {
                 nextTargets[rt.lang] = rt.target;
               }
+              if (rt && typeof rt.lang === "string" && typeof rt.reading === "string" && rt.reading) {
+                nextReadings[rt.lang] = rt.reading;
+              }
             }
           }
           t.patchSegment(s.id, {
             source: typeof r?.source === "string" ? r.source : s.source,
+            sourceReading:
+              typeof r?.sourceReading === "string" && r.sourceReading
+                ? r.sourceReading
+                : s.sourceReading,
             targets: nextTargets,
+            readings: nextReadings,
             refined: true,
           });
         });
@@ -315,6 +332,7 @@ export default function Translator() {
             partialSource={t.partialSource}
             partialTargets={t.partialTargets}
             speech={speech}
+            showReading={showReading}
           />
         ) : (
           <LiveTranscript
@@ -323,6 +341,7 @@ export default function Translator() {
             partialTargets={t.partialTargets}
             live={live}
             speech={speech}
+            showReading={showReading}
           />
         )}
       </main>
@@ -339,6 +358,15 @@ export default function Translator() {
               音声出力 {t.audioOn ? "ON" : "OFF"}
             </button>
           )}
+          <button
+            className={`audio-toggle ${showReading ? "on" : ""}`}
+            onClick={() => setShowReading((v) => !v)}
+            aria-pressed={showReading}
+            title="発音記号（ローマ字・ピンイン・IPAなど）を表示"
+          >
+            <span className="audio-ico">あ</span>
+            発音記号 {showReading ? "ON" : "OFF"}
+          </button>
           <button
             className={`audio-toggle flip ${flipped ? "on" : ""}`}
             onClick={() => setFlipped((v) => !v)}
@@ -497,7 +525,7 @@ function LangSelect({
 
 /* ---------------- Conversation (LINE-style chat) ---------------- */
 
-type ChatTarget = { lang: string; text: string };
+type ChatTarget = { lang: string; text: string; reading?: string };
 
 type Speech = ReturnType<typeof useSpeech>;
 
@@ -534,12 +562,14 @@ function ChatTranscript({
   partialSource,
   partialTargets,
   speech,
+  showReading,
 }: {
   segments: Segment[];
   convLangs: string[];
   partialSource: string;
   partialTargets: Record<string, string>;
   speech: Speech;
+  showReading: boolean;
 }) {
   const hasPartial =
     !!partialSource || Object.keys(partialTargets).length > 0;
@@ -557,10 +587,11 @@ function ChatTranscript({
     src: string,
     map: Record<string, string>,
     keepEmpty: boolean,
+    readings?: Record<string, string>,
   ): ChatTarget[] =>
     convLangs
       .filter((l) => l !== src)
-      .map((l) => ({ lang: l, text: map[l] ?? "" }))
+      .map((l) => ({ lang: l, text: map[l] ?? "", reading: readings?.[l] }))
       .filter((x) => keepEmpty || x.text);
 
   return (
@@ -574,10 +605,12 @@ function ChatTranscript({
             side={sideOf(src)}
             srcLang={src}
             original={s.source}
-            targets={targetsOf(src, s.targets, false)}
+            sourceReading={s.sourceReading}
+            targets={targetsOf(src, s.targets, false, s.readings)}
             refined={s.refined}
             speech={speech}
             speakKey={s.id}
+            showReading={showReading}
           />
         );
       })}
@@ -597,6 +630,7 @@ function ChatTranscript({
               original={partialSource}
               targets={targetsOf(src, partialTargets, true)}
               pending
+              showReading={showReading}
             />
           );
         })()}
@@ -608,20 +642,24 @@ function ChatMsg({
   side,
   srcLang,
   original,
+  sourceReading,
   targets,
   pending,
   refined,
   speech,
   speakKey,
+  showReading,
 }: {
   side: "a" | "b";
   srcLang: string;
   original: string;
+  sourceReading?: string;
   targets: ChatTarget[];
   pending?: boolean;
   refined?: boolean;
   speech?: Speech;
   speakKey?: string;
+  showReading?: boolean;
 }) {
   const lang = getLanguage(srcLang);
   // Speak buttons appear only on finalized lines (not the streaming bubble).
@@ -657,29 +695,37 @@ function ChatMsg({
             />
           )}
         </p>
+        {showReading && sourceReading && (
+          <p className="msg-reading">{sourceReading}</p>
+        )}
         {targets.map((tg) => (
-          <p key={tg.lang} className="msg-trans">
-            <span className="msg-trans-flag" aria-hidden>
-              {getLanguage(tg.lang).flag}
-            </span>
-            {tg.text ? (
-              pending ? (
-                <Typewriter text={tg.text} />
+          <div key={tg.lang} className="msg-trans-block">
+            <p className="msg-trans">
+              <span className="msg-trans-flag" aria-hidden>
+                {getLanguage(tg.lang).flag}
+              </span>
+              {tg.text ? (
+                pending ? (
+                  <Typewriter text={tg.text} />
+                ) : (
+                  tg.text
+                )
               ) : (
-                tg.text
-              )
-            ) : (
-              "…"
+                "…"
+              )}
+              {canSpeak && tg.text && (
+                <SpeakButton
+                  speech={speech}
+                  spKey={`${speakKey}:${tg.lang}`}
+                  text={tg.text}
+                  lang={tg.lang}
+                />
+              )}
+            </p>
+            {showReading && tg.reading && (
+              <p className="msg-reading sub">{tg.reading}</p>
             )}
-            {canSpeak && tg.text && (
-              <SpeakButton
-                speech={speech}
-                spKey={`${speakKey}:${tg.lang}`}
-                text={tg.text}
-                lang={tg.lang}
-              />
-            )}
-          </p>
+          </div>
         ))}
       </div>
     </div>
@@ -694,12 +740,14 @@ function LiveTranscript({
   partialTargets,
   live,
   speech,
+  showReading,
 }: {
   segments: Segment[];
   partialSource: string;
   partialTargets: Record<string, string>;
   live: boolean;
   speech: Speech;
+  showReading: boolean;
 }) {
   const firstVal = (m: Record<string, string>) => Object.values(m)[0] ?? "";
   const firstKey = (m: Record<string, string>) => Object.keys(m)[0];
@@ -722,6 +770,7 @@ function LiveTranscript({
       {segments.map((s) => {
         const tgtText = firstVal(s.targets);
         const tgtLang = firstKey(s.targets);
+        const tgtReading = tgtLang ? s.readings?.[tgtLang] : undefined;
         return (
           <div key={s.id} className="live-line done">
             <p className="live-target">
@@ -735,6 +784,9 @@ function LiveTranscript({
                 />
               )}
             </p>
+            {showReading && tgtReading && (
+              <p className="msg-reading">{tgtReading}</p>
+            )}
             {s.source && (
               <p className="live-source">
                 {s.source}
@@ -745,6 +797,9 @@ function LiveTranscript({
                   lang={s.sourceLang ?? undefined}
                 />
               </p>
+            )}
+            {showReading && s.sourceReading && (
+              <p className="msg-reading">{s.sourceReading}</p>
             )}
           </div>
         );
