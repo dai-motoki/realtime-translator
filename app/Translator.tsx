@@ -831,6 +831,7 @@ function ChatTranscript({
   speakers: Record<string, number>;
 }) {
   const tx = useT();
+  const uiLang = useUiLang();
   const hasPartial =
     !!partialSource || Object.keys(partialTargets).length > 0;
   if (segments.length === 0 && !hasPartial) {
@@ -845,14 +846,21 @@ function ChatTranscript({
   }
   const sideOf = (lang: string) =>
     convLangs.indexOf(lang) % 2 === 0 ? "a" : "b";
+  // Order translations with the reader's My Page language first, so their own
+  // language shows at the top of every bubble.
+  const orderFor = (src: string): string[] => {
+    const others = convLangs.filter((l) => l !== src);
+    return others.includes(uiLang)
+      ? [uiLang, ...others.filter((l) => l !== uiLang)]
+      : others;
+  };
   const targetsOf = (
     src: string,
     map: Record<string, string>,
     keepEmpty: boolean,
     readings?: Record<string, string>,
   ): ChatTarget[] =>
-    convLangs
-      .filter((l) => l !== src)
+    orderFor(src)
       .map((l) => ({ lang: l, text: map[l] ?? "", reading: readings?.[l] }))
       .filter((x) => keepEmpty || x.text);
 
