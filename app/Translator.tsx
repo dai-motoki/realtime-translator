@@ -27,6 +27,8 @@ import {
   useConversations,
   type LoggedSegment,
 } from "@/lib/useConversations";
+import { useDiarization, type TimedLine } from "@/lib/useDiarization";
+import { SpeakerTag } from "./SpeakerTag";
 import { StudyPanel } from "./StudyPanel";
 import { LogPanel } from "./LogPanel";
 import { Typewriter } from "./Typewriter";
@@ -77,6 +79,8 @@ export default function Translator() {
   // Saved conversation logs + auto-generated minutes (localStorage for now).
   const convos = useConversations();
   const [logOpen, setLogOpen] = useState(false);
+  // Speaker diarization (who's talking) — only active when Picovoice is set up.
+  const diar = useDiarization();
   // When on, new lines are auto-filed into the 単語帳 / 文法ノート as you talk.
   const [autoStudy, setAutoStudy] = useState(true);
 
@@ -286,6 +290,7 @@ export default function Translator() {
   // kicks off automatic 議事録 (minutes) generation. The store dedupes by
   // content, so a stop-then-clear can't file the same conversation twice.
   const archiveConv = convos.archive;
+  const speakers = diar.speakers;
   const archiveCurrent = useCallback(() => {
     const segs = t.segments;
     if (segs.length === 0) return;
@@ -295,6 +300,7 @@ export default function Translator() {
       sourceReading: s.sourceReading,
       targets: s.targets,
       readings: s.readings,
+      speaker: speakers[s.id],
       at: s.at,
     }));
     archiveConv({
@@ -303,7 +309,7 @@ export default function Translator() {
       lang: baseLang ?? "ja",
       segments: logged,
     });
-  }, [t.segments, mode, convLangs, targetLang, baseLang, archiveConv]);
+  }, [t.segments, mode, convLangs, targetLang, baseLang, archiveConv, speakers]);
 
   // Call the latest archive fn from the status effect without making that effect
   // depend on (and re-run for) every render.
@@ -326,8 +332,40 @@ export default function Translator() {
   // "履歴を消す": archive the conversation before wiping it off the screen.
   const clearHistory = useCallback(() => {
     archiveRef.current();
+    diar.reset();
     t.clear();
-  }, [t]);
+  }, [t, diar]);
+
+  // ---- Speaker diarization (only when Picovoice is configured) ----
+  // Record the mic while we're listening; release the recorder when we stop.
+  // With no AccessKey, `configured` is false and this never touches the mic —
+  // the app runs exactly as it did before the feature existed.
+  useEffect(() => {
+    if (!diar.configured) return;
+    if (t.activeStream) void diar.start(t.activeStream);
+    else diar.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t.activeStream, diar.configured]);
+
+  // A couple seconds after the conversation grows, re-diarize the whole
+  // recording so speaker labels appear (and sharpen) in near-real-time.
+  const diarLinesRef = useRef<TimedLine[]>([]);
+  const diarRunRef = useRef(diar.run);
+  useEffect(() => {
+    diarLinesRef.current = t.segments.map((s) => ({
+      id: s.id,
+      startedAt: s.startedAt,
+      at: s.at,
+    }));
+    diarRunRef.current = diar.run;
+  });
+  useEffect(() => {
+    if (!diar.configured || t.segments.length === 0) return;
+    const id = window.setTimeout(() => {
+      void diarRunRef.current(diarLinesRef.current);
+    }, 2500);
+    return () => window.clearTimeout(id);
+  }, [t.segments.length, diar.configured]);
 
   const switchMode = useCallback(
     (next: Mode) => {
@@ -484,6 +522,7 @@ export default function Translator() {
             partialTargets={t.partialTargets}
             speech={speech}
             showReading={showReading}
+            speakers={diar.speakers}
           />
         ) : (
           <LiveTranscript
@@ -493,6 +532,7 @@ export default function Translator() {
             live={live}
             speech={speech}
             showReading={showReading}
+            speakers={diar.speakers}
           />
         )}
       </main>
@@ -769,6 +809,7 @@ function ChatTranscript({
   partialTargets,
   speech,
   showReading,
+  speakers,
 }: {
   segments: Segment[];
   convLangs: string[];
@@ -776,6 +817,7 @@ function ChatTranscript({
   partialTargets: Record<string, string>;
   speech: Speech;
   showReading: boolean;
+  speakers: Record<string, number>;
 }) {
   const hasPartial =
     !!partialSource || Object.keys(partialTargets).length > 0;
@@ -817,6 +859,7 @@ function ChatTranscript({
             speech={speech}
             speakKey={s.id}
             showReading={showReading}
+            speaker={speakers[s.id]}
           />
         );
       })}
@@ -855,6 +898,7 @@ function ChatMsg({
   speech,
   speakKey,
   showReading,
+  speaker,
 }: {
   side: "a" | "b";
   srcLang: string;
@@ -866,6 +910,7 @@ function ChatMsg({
   speech?: Speech;
   speakKey?: string;
   showReading?: boolean;
+  speaker?: number;
 }) {
   const lang = getLanguage(srcLang);
   // Speak buttons appear only on finalized lines (not the streaming bubble).
@@ -876,6 +921,7 @@ function ChatMsg({
         {lang.flag}
       </span>
       <div className="msg-bubble">
+        {speaker ? <SpeakerTag n={speaker} /> : null}
         {/* what was actually said (top), then a translation per language */}
         <p className="msg-main">
           {original ? (
@@ -955,6 +1001,7 @@ function LiveTranscript({
   live,
   speech,
   showReading,
+  speakers,
 }: {
   segments: Segment[];
   partialSource: string;
@@ -962,6 +1009,7 @@ function LiveTranscript({
   live: boolean;
   speech: Speech;
   showReading: boolean;
+  speakers: Record<string, number>;
 }) {
   const firstVal = (m: Record<string, string>) => Object.values(m)[0] ?? "";
   const firstKey = (m: Record<string, string>) => Object.keys(m)[0];
@@ -987,6 +1035,7 @@ function LiveTranscript({
         const tgtReading = tgtLang ? s.readings?.[tgtLang] : undefined;
         return (
           <div key={s.id} className="live-line done">
+            {speakers[s.id] ? <SpeakerTag n={speakers[s.id]} /> : null}
             <p className="live-target">
               {tgtText}
               {tgtText && (

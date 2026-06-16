@@ -1328,6 +1328,27 @@ select {
   color: var(--fg-dim);
 }
 
+/* ---------------- Speaker diarization tag ---------------- */
+.speaker-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  opacity: 0.95;
+}
+.speaker-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.live-line .speaker-tag {
+  margin-bottom: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation: none !important;
