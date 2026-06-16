@@ -10,6 +10,8 @@ export interface LoggedSegment {
   /** Translations keyed by output language. */
   targets: Record<string, string>;
   readings?: Record<string, string>;
+  /** Diarized speaker number (1-based); undefined when unknown. */
+  speaker?: number;
   at: number;
 }
 
@@ -110,6 +112,7 @@ function toLines(c: Conversation) {
   return c.segments.map((s) => ({
     source: s.source,
     sourceLang: s.sourceLang,
+    speaker: s.speaker,
     targets: Object.entries(s.targets).map(([lang, target]) => ({
       lang,
       target,

@@ -18,6 +18,8 @@ export interface Segment {
   /** Pronunciation guide for each translation, keyed by output language. */
   readings?: Record<string, string>;
   refined?: boolean;
+  /** Wall-clock time (ms) the utterance started — first transcript token. */
+  startedAt?: number;
   at: number;
 }
 
@@ -80,6 +82,9 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   const [speaking, setSpeaking] = useState(false);
   const [muted, setMutedState] = useState(false);
   const [audioOn, setAudioOnState] = useState(false);
+  // The live mic stream, exposed so a parallel pipeline (speaker diarization)
+  // can tap the same audio. null whenever we're not listening.
+  const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
 
   const sessionsRef = useRef<Session[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
@@ -94,6 +99,8 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
   const srcBuf = useRef("");
   const tgtBufs = useRef<Record<string, string>>({}); // by output language
   const segLangRef = useRef<string | null>(null);
+  // Wall-clock time the current utterance started (first transcript token).
+  const utterStartRef = useRef(0);
   // Conversation languages (auto multi-way translation). null ⇒ live mode
   // (translate everything into the single configured output language).
   const autoLangsRef = useRef<string[] | null>(null);
@@ -187,9 +194,11 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         targets,
         rawTargets: { ...targets },
         sourceLang,
+        startedAt: utterStartRef.current || Date.now(),
         at: Date.now(),
       },
     ]);
+    utterStartRef.current = 0;
   }, []);
 
   const scheduleGap = useCallback(() => {
@@ -240,6 +249,9 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
             refreshPartialTargets();
           }
         }
+        // Mark the utterance's start the moment its first token arrives, so the
+        // diarizer can line this line up against the recorded audio.
+        if (delta && !srcBuf.current) utterStartRef.current = Date.now();
         srcBuf.current += delta;
         setPartialSource(srcBuf.current);
         setSpeaking(true);
@@ -416,6 +428,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     closeSessions();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    setActiveStream(null);
     srcBuf.current = "";
     tgtBufs.current = {};
     segLangRef.current = null;
@@ -463,6 +476,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
         }
       }
       streamRef.current = stream;
+      setActiveStream(stream);
       runningRef.current = true;
 
       const ok = await openSessions();
@@ -513,6 +527,7 @@ export function useTranslator(audioRef: RefObject<HTMLAudioElement | null>) {
     speaking,
     muted,
     audioOn,
+    activeStream,
     start,
     stop,
     setMuted,

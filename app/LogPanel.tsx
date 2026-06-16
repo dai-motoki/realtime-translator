@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { getLanguage } from "@/lib/languages";
 import type { Conversation, useConversations } from "@/lib/useConversations";
+import { SpeakerTag } from "./SpeakerTag";
 
 type Convos = ReturnType<typeof useConversations>;
 
@@ -242,6 +243,7 @@ function ChatHistory({ conv }: { conv: Conversation }) {
               {src ? getLanguage(src).flag : "💬"}
             </span>
             <div className="msg-bubble">
+              {s.speaker ? <SpeakerTag n={s.speaker} /> : null}
               <p className="msg-main">{s.source || "…"}</p>
               {s.sourceReading && <p className="msg-reading">{s.sourceReading}</p>}
               {targets.map((tg) => (

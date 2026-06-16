@@ -14,6 +14,8 @@ interface InTarget {
 interface InLine {
   source?: string;
   sourceLang?: string | null;
+  /** Diarized speaker number (1-based), when available. */
+  speaker?: number;
   targets?: InTarget[];
 }
 interface MinutesBody {
@@ -22,8 +24,11 @@ interface MinutesBody {
   lang?: string;
 }
 
-function systemPrompt(langName: string): string {
-  return `You are a precise meeting-minutes writer. You receive a real, multi-language conversation that was interpreted live: each line has what was spoken ("source", in its own language) plus machine translations into the other languages. Treat the whole thing as a single meeting/conversation, regardless of which language each line is in.
+function systemPrompt(langName: string, hasSpeakers: boolean): string {
+  const speakerNote = hasSpeakers
+    ? `\n\nLines are tagged with an automatically-detected speaker (e.g. "speaker:Speaker1"). These come from voice diarization and may be imperfect, but use them to attribute points to speakers where it helps (e.g. "Speaker1 が〜を提案", and assign action items to the right speaker). Keep the "Speaker1/Speaker2" labels as-is.`
+    : "";
+  return `You are a precise meeting-minutes writer. You receive a real, multi-language conversation that was interpreted live: each line has what was spoken ("source", in its own language) plus machine translations into the other languages. Treat the whole thing as a single meeting/conversation, regardless of which language each line is in.${speakerNote}
 
 Write concise, faithful minutes (議事録) of this conversation. Do NOT invent facts that were not discussed; if a section has nothing, return an empty array (or empty string for the summary).
 
@@ -65,9 +70,17 @@ export async function POST(request: NextRequest) {
   const lang = typeof body.lang === "string" && body.lang ? body.lang : "ja";
   const langName = getLanguage(lang).label || "Japanese";
 
+  const hasSpeakers = lines.some(
+    (l) => typeof l.speaker === "number" && l.speaker > 0,
+  );
+
   const convo = lines
     .map((l, i) => {
-      const head = `#${i + 1} (spoken: ${l.sourceLang ?? "auto"})`;
+      const who =
+        typeof l.speaker === "number" && l.speaker > 0
+          ? ` speaker:Speaker${l.speaker}`
+          : "";
+      const head = `#${i + 1} (spoken: ${l.sourceLang ?? "auto"}${who})`;
       const src = `  ${l.sourceLang ?? "src"}: ${JSON.stringify(l.source ?? "")}`;
       const tg = (Array.isArray(l.targets) ? l.targets : [])
         .map((t) => `  ${t.lang ?? "?"}: ${JSON.stringify(t.target ?? "")}`)
@@ -90,7 +103,7 @@ export async function POST(request: NextRequest) {
         reasoning_effort: "low",
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: systemPrompt(langName) },
+          { role: "system", content: systemPrompt(langName, hasSpeakers) },
           { role: "user", content: userMsg },
         ],
       }),

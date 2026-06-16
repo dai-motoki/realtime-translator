@@ -44,6 +44,18 @@ pnpm dev
 | 変数 | 用途 |
 | --- | --- |
 | `OPENAI_API_KEY` | サーバ側のみ。Realtime translation の client secret 発行に使用。 |
+| `MINUTES_MODEL` | （任意）議事録生成のモデル。既定は `REFINE_MODEL` → `gpt-5.5`。 |
+| `NEXT_PUBLIC_PICOVOICE_ACCESS_KEY` | （任意）話者識別を有効化。未設定なら機能オフ。 |
+| `NEXT_PUBLIC_FALCON_MODEL_PATH` | （任意）Falconモデルの配置パス。既定 `/models/falcon_params.pv`。 |
+
+### 話者識別（話者分離）の有効化 — 任意
+
+会話ログ・議事録に「話者1 / 話者2 …」を自動で付けられます。声色から話者を推定する [Picovoice Falcon](https://picovoice.ai/platform/falcon/) をブラウザ内（WASM）で実行するため、**音声は端末外に出ません**。登録は不要で、会話が数秒たまるたびに録音全体を再クラスタリングし、ラベルを擬似リアルタイムに反映します。
+
+1. [Picovoice Console](https://console.picovoice.ai/) で無料の **AccessKey** を取得し、`NEXT_PUBLIC_PICOVOICE_ACCESS_KEY` に設定。
+2. モデル [`falcon_params.pv`](https://github.com/Picovoice/falcon/tree/main/lib/common) をダウンロードし、`public/models/falcon_params.pv` に配置。
+
+未設定のままなら話者ラベルは出ず、アプリは従来通り動作します。
 
 ## Vercel へのデプロイ
 

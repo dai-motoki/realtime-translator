@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@picovoice/falcon-web':
+        specifier: ^2.0.2
+        version: 2.0.2
       next:
         specifier: 16.2.7
         version: 16.2.7(@babel/core@7.29.7)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -425,6 +428,15 @@ packages:
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
 
+  '@picovoice/falcon-web@2.0.2':
+    resolution: {integrity: sha512-f59ICxIFhIn3valahCFtVCQG8U5gq8W1h31HCTGbR9ajwmzkSGalFWDfa8v5qkCMNlNmPk2NzZb/kf31eXZb/A==}
+    engines: {node: '>=18'}
+
+  '@picovoice/web-utils@1.4.3':
+    resolution: {integrity: sha512-7JN3YYsSD9Gtce6YKG3XqpX49dkeu7jTdbox7rHQA/X/Q3zxopXA9zlCKSq6EIjFbiX2iuzDKUx1XrFa3d8c0w==}
+    engines: {node: '>=14'}
+    hasBin: true
+
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
 
@@ -768,6 +780,10 @@ packages:
 
   color-name@1.1.4:
     resolution: {integrity: sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA==}
+
+  commander@10.0.1:
+    resolution: {integrity: sha512-y4Mg2tXshplEbSGzx7amzPwKKOCGuoSRP/CjEdwwk0FOGlUbq6lKuoyDZTNZkmxHdJtp54hdfY/JUrdL7Xfdug==}
+    engines: {node: '>=14'}
 
   concat-map@0.0.1:
     resolution: {integrity: sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg==}
@@ -2129,6 +2145,14 @@ snapshots:
 
   '@nolyfill/is-core-module@1.0.39': {}
 
+  '@picovoice/falcon-web@2.0.2':
+    dependencies:
+      '@picovoice/web-utils': 1.4.3
+
+  '@picovoice/web-utils@1.4.3':
+    dependencies:
+      commander: 10.0.1
+
   '@rtsao/scc@1.1.0': {}
 
   '@swc/helpers@0.5.15':
@@ -2479,6 +2503,8 @@ snapshots:
       color-name: 1.1.4
 
   color-name@1.1.4: {}
+
+  commander@10.0.1: {}
 
   concat-map@0.0.1: {}
 
