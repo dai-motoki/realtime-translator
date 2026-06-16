@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { SITE_LOG_BEACON_JS } from "@/lib/siteLogBeacon";
 import "./globals.css";
 import { I18nProvider } from "@/lib/i18n";
 
@@ -34,6 +35,8 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <I18nProvider>{children}</I18nProvider>
+        {/* 匿名アクセスログのビーコン（zentou-ops の /admin/site-log に集約） */}
+        <script dangerouslySetInnerHTML={{ __html: SITE_LOG_BEACON_JS }} />
       </body>
     </html>
   );
