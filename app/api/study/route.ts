@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { getLanguage } from "@/lib/languages";
 
 export const dynamic = "force-dynamic";
 
@@ -16,27 +17,31 @@ interface InLine {
 }
 interface StudyBody {
   lines?: InLine[];
+  /** The learner's language — meanings/explanations are written in it. */
+  lang?: string;
 }
 
-const SYSTEM = `You are a friendly language tutor for a Japanese-speaking learner. You receive a real multilingual conversation: each line has what was spoken ("source", with its language code) and its translations into the other languages. The learner is Japanese and is practising the OTHER languages in the conversation (e.g. English, Chinese).
+function systemPrompt(langName: string): string {
+  return `You are a friendly language tutor for a learner who reads ${langName}. You receive a real multilingual conversation: each line has what was spoken ("source", with its language code) and its translations into the other languages. The learner is practising the languages in the conversation.
 
 From this conversation, produce personalised study material:
 
-1. "vocab": the most useful words and short phrases worth memorising, taken from the NON-Japanese languages actually used. For each item give:
+1. "vocab": the most useful words and short phrases worth memorising, taken from the languages actually used (other than ${langName}). For each item give:
    - "term": the word/phrase in its own language
    - "lang": its language code (e.g. "en", "zh")
    - "reading": a pronunciation guide (IPA for English/European languages, Hanyu Pinyin with tone marks for Chinese, Revised Romanization for Korean, standard romanization otherwise)
-   - "meaning": a concise Japanese meaning (日本語の意味)
+   - "meaning": a concise meaning written in ${langName}
    - "example": the example sentence from the conversation that uses it (in its own language); omit if none fits
    Pick 6–12 genuinely useful items, skipping trivial words (the, a, is …). Prefer phrases/collocations the learner would want to reuse.
 
-2. "grammar": a few (3–6) basic grammar points illustrated by the conversation's non-Japanese sentences. For each item give:
-   - "title": a short name for the point, in Japanese (e.g. "受け身（be covered in〜）")
+2. "grammar": a few (3–6) basic grammar points illustrated by the conversation's sentences. For each item give:
+   - "title": a short name for the point, written in ${langName}
    - "lang": the language code it applies to
-   - "explanation": a clear, short explanation in Japanese of how it works
+   - "explanation": a clear, short explanation in ${langName} of how it works
    - "example": an example sentence from the conversation (in its own language)
 
-Return STRICT JSON: {"vocab":[{"term","lang","reading","meaning","example"}],"grammar":[{"title","lang","explanation","example"}]}. All explanations and meanings in Japanese. Output JSON only, no commentary.`;
+Return STRICT JSON: {"vocab":[{"term","lang","reading","meaning","example"}],"grammar":[{"title","lang","explanation","example"}]}. All explanations and meanings in ${langName}. Output JSON only, no commentary.`;
+}
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -56,10 +61,13 @@ export async function POST(request: NextRequest) {
   const lines = Array.isArray(body.lines) ? body.lines : [];
   if (lines.length === 0) {
     return Response.json(
-      { error: "会話がまだありません。少し話してから生成してください。" },
+      { error: "There’s no conversation yet. Talk a little first, then generate." },
       { status: 400 },
     );
   }
+
+  const lang = typeof body.lang === "string" && body.lang ? body.lang : "en";
+  const langName = getLanguage(lang).label || "English";
 
   const convo = lines
     .map((l, i) => {
@@ -86,7 +94,7 @@ export async function POST(request: NextRequest) {
         reasoning_effort: "low",
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: SYSTEM },
+          { role: "system", content: systemPrompt(langName) },
           { role: "user", content: userMsg },
         ],
       }),
@@ -94,7 +102,7 @@ export async function POST(request: NextRequest) {
 
     if (!res.ok) {
       return Response.json(
-        { error: "学習教材の生成に失敗しました。少し待って再度お試しください。" },
+        { error: "Failed to generate study material." },
         { status: 502 },
       );
     }
@@ -118,7 +126,7 @@ export async function POST(request: NextRequest) {
     });
   } catch {
     return Response.json(
-      { error: "学習教材の生成中にエラーが発生しました。" },
+      { error: "Failed to generate study material." },
       { status: 502 },
     );
   }

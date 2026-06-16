@@ -21,6 +21,7 @@ import {
   saveBaseLang,
   defaultConvLangs,
 } from "@/lib/locale";
+import { useT, useUiLang } from "@/lib/i18n";
 import { useSpeech } from "@/lib/useSpeech";
 import { useStudy, type StudyLine } from "@/lib/useStudy";
 import {
@@ -31,6 +32,7 @@ import { useDiarization, type TimedLine } from "@/lib/useDiarization";
 import { SpeakerTag } from "./SpeakerTag";
 import { StudyPanel } from "./StudyPanel";
 import { LogPanel } from "./LogPanel";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import { Typewriter } from "./Typewriter";
 import {
   detectPlatform,
@@ -68,9 +70,17 @@ function baseLangSnapshot(): string | null {
 
 const noopSubscribe = () => () => {};
 
+// Conversation chips and the live target only offer languages the realtime
+// model can actually speak. The full 210+ language list lives in the header
+// "My Page language" switcher, not here.
+const REALTIME_LANGUAGES = LANGUAGES.filter((l) => l.realtime);
+
 export default function Translator() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const t = useTranslator(audioRef);
+  // UI translation: tx("English") → the chosen My Page language.
+  const tx = useT();
+  const uiLang = useUiLang();
   // On-demand text-to-speech: tap any finalized line to hear it spoken.
   const speech = useSpeech();
   // Vocabulary + grammar study built from the conversation, saved on-device.
@@ -123,9 +133,12 @@ export default function Translator() {
   );
 
   // Live mode: translate everything heard into this language. Defaults to the
-  // base language; `targetOverride` holds an explicit pick from the selector.
+  // base language (when the realtime model can speak it); `targetOverride` holds
+  // an explicit pick from the realtime-only selector.
   const [targetOverride, setTargetOverride] = useState<string | null>(null);
-  const targetLang = targetOverride ?? baseLang ?? "ja";
+  const targetLang =
+    targetOverride ??
+    (baseLang && isRealtimeVoice(baseLang) ? baseLang : "ja");
   const setTargetLang = useCallback((v: string) => {
     setTargetOverride(v);
     // Remember the chosen output language (翻訳後言語) for next time.
@@ -306,10 +319,11 @@ export default function Translator() {
     archiveConv({
       mode,
       langs: mode === "talk" ? convLangs : [targetLang],
-      lang: baseLang ?? "ja",
+      // Minutes are written in the reader's My Page language.
+      lang: uiLang,
       segments: logged,
     });
-  }, [t.segments, mode, convLangs, targetLang, baseLang, archiveConv, speakers]);
+  }, [t.segments, mode, convLangs, targetLang, uiLang, archiveConv, speakers]);
 
   // Call the latest archive fn from the status effect without making that effect
   // depend on (and re-run for) every render.
@@ -423,9 +437,11 @@ export default function Translator() {
   // (re-created-each-render) study object or lines array.
   const studyLinesRef = useRef(studyLines);
   const accumulateRef = useRef(study.accumulate);
+  const uiLangRef = useRef(uiLang);
   useEffect(() => {
     studyLinesRef.current = studyLines;
     accumulateRef.current = study.accumulate;
+    uiLangRef.current = uiLang;
   });
 
   // Auto-accumulation: a few seconds after the conversation grows, file any new
@@ -440,7 +456,7 @@ export default function Translator() {
       if (lines.length <= studiedRef.current) return;
       const from = Math.max(0, studiedRef.current - 1); // 1 line of context
       studiedRef.current = lines.length;
-      void accumulateRef.current(lines.slice(from));
+      void accumulateRef.current(lines.slice(from), uiLangRef.current);
     }, 5000);
     return () => window.clearTimeout(id);
   }, [t.segments.length, autoStudy]);
@@ -448,15 +464,15 @@ export default function Translator() {
   const micBlocked =
     micPerm === "denied" ||
     (!!t.error &&
-      /マイク|許可|permission|allow|secure|HTTPS|ブラウザ/i.test(t.error));
+      /microphone|permission|allow|secure|HTTPS|browser/i.test(t.error));
 
   const startLabel = connecting
-    ? "接続中…"
+    ? tx("Connecting…")
     : live
-      ? "停止"
+      ? tx("Stop")
       : mode === "talk"
-        ? "会話を始める"
-        : "翻訳をはじめる";
+        ? tx("Start conversation")
+        : tx("Start translating");
 
   return (
     <div className={`app${flipped ? " flipped" : ""}`}>
@@ -466,29 +482,36 @@ export default function Translator() {
         <div className="brand">
           <span className="brand-dot" data-status={t.status} />
           <span className="brand-name">
-            {optimizing ? "✨ 最新の会話を最適化中…" : "Realtime Translate"}
+            {optimizing
+              ? `✨ ${tx("Optimizing the latest conversation…")}`
+              : "Realtime Translate"}
           </span>
         </div>
-        <div className="seg">
-          <button
-            className={mode === "talk" ? "seg-btn on" : "seg-btn"}
-            onClick={() => switchMode("talk")}
-          >
-            会話
-          </button>
-          <button
-            className={mode === "live" ? "seg-btn on" : "seg-btn"}
-            onClick={() => switchMode("live")}
-          >
-            ライブ
-          </button>
+        <div className="topbar-right">
+          <LanguageSwitcher />
+          <div className="seg">
+            <button
+              className={mode === "talk" ? "seg-btn on" : "seg-btn"}
+              onClick={() => switchMode("talk")}
+            >
+              {tx("Conversation")}
+            </button>
+            <button
+              className={mode === "live" ? "seg-btn on" : "seg-btn"}
+              onClick={() => switchMode("live")}
+            >
+              {tx("Live")}
+            </button>
+          </div>
         </div>
       </header>
 
       {platform?.inApp && (
         <div className="banner warn" role="alert">
-          ⚠️ {platform.inApp} のアプリ内ブラウザではマイクが使えません。右上メニューから
-          <b> Safari / Chrome で開く</b>を選んでください。
+          ⚠️{" "}
+          {tx(
+            "The microphone isn’t available in {app}’s in-app browser. Open this page in Safari or Chrome from the menu at the top right.",
+          ).replace("{app}", platform.inApp)}
         </div>
       )}
 
@@ -546,25 +569,25 @@ export default function Translator() {
               aria-pressed={t.audioOn}
             >
               <span className="audio-ico">{t.audioOn ? "🔊" : "🔇"}</span>
-              音声出力 {t.audioOn ? "ON" : "OFF"}
+              {tx("Audio output")} {t.audioOn ? "ON" : "OFF"}
             </button>
           )}
           <button
             className={`audio-toggle ${showReading ? "on" : ""}`}
             onClick={() => setShowReading((v) => !v)}
             aria-pressed={showReading}
-            title="発音記号（ローマ字・ピンイン・IPAなど）を表示"
+            title={tx("Show pronunciation (romaji, pinyin, IPA, etc.)")}
           >
             <span className="audio-ico">あ</span>
-            発音記号 {showReading ? "ON" : "OFF"}
+            {tx("Pronunciation")} {showReading ? "ON" : "OFF"}
           </button>
           <button
             className="audio-toggle study-open"
             onClick={() => setStudyOpen(true)}
-            title="この会話から単語・文法を学ぶ"
+            title={tx("Learn words and grammar from this conversation")}
           >
             <span className="audio-ico">📚</span>
-            学習
+            {tx("Study")}
             {study.savedVocab.length > 0 && (
               <span className="study-count">{study.savedVocab.length}</span>
             )}
@@ -572,10 +595,10 @@ export default function Translator() {
           <button
             className="audio-toggle log-open"
             onClick={() => setLogOpen(true)}
-            title="議事録と会話ログを見る"
+            title={tx("View minutes and conversation logs")}
           >
             <span className="audio-ico">📝</span>
-            議事録
+            {tx("Minutes")}
             {convos.conversations.length > 0 && (
               <span className="study-count">{convos.conversations.length}</span>
             )}
@@ -584,19 +607,19 @@ export default function Translator() {
             className={`audio-toggle flip ${flipped ? "on" : ""}`}
             onClick={() => setFlipped((v) => !v)}
             aria-pressed={flipped}
-            title="相手に見せる（画面を上下反転）"
+            title={tx("Show to the other person (flip the screen)")}
           >
             <span className="audio-ico">🔄</span>
-            相手向き
+            {tx("Face them")}
           </button>
           {t.segments.length > 0 && (
             <button className="ghost" onClick={clearHistory}>
-              履歴を消す
+              {tx("Clear history")}
             </button>
           )}
           {live && (
             <button className="ghost danger" onClick={t.stop}>
-              終了
+              {tx("End")}
             </button>
           )}
         </div>
@@ -647,13 +670,15 @@ function LangChips({
   open: boolean;
   onToggleOpen: () => void;
 }) {
+  const tx = useT();
   const [showAll, setShowAll] = useState(false);
-  // Common languages up-front; the rest are shown only when "もっと見る" is
-  // tapped — but a selected non-common language always stays visible.
+  // Common languages up-front; the rest are shown only when "Show more" is
+  // tapped — but a selected non-common language always stays visible. Only
+  // realtime-capable languages are offered here.
   const shown = showAll
-    ? LANGUAGES
-    : LANGUAGES.filter((l) => l.common || selected.includes(l.code));
-  const hiddenCount = LANGUAGES.length - shown.length;
+    ? REALTIME_LANGUAGES
+    : REALTIME_LANGUAGES.filter((l) => l.common || selected.includes(l.code));
+  const hiddenCount = REALTIME_LANGUAGES.length - shown.length;
 
   return (
     <div className="langchips-wrap">
@@ -664,7 +689,7 @@ function LangChips({
         onClick={onToggleOpen}
       >
         <span className="langchips-caret">{open ? "▾" : "▸"}</span>
-        <span className="langchips-title">言語</span>
+        <span className="langchips-title">{tx("Languages")}</span>
         {!open && (
           <span className="langchips-summary">
             {selected.map((c) => getLanguage(c).flag).join(" ")}
@@ -686,14 +711,6 @@ function LangChips({
               >
                 <span className="langchip-flag">{l.flag}</span>
                 <span className="langchip-name">{l.name}</span>
-                {!l.realtime && (
-                  <span
-                    className="langchip-sub"
-                    title="リアルタイム音声には非対応（テキスト翻訳のみ）"
-                  >
-                    字幕
-                  </span>
-                )}
               </button>
             );
           })}
@@ -703,7 +720,7 @@ function LangChips({
               className="langchip more"
               onClick={() => setShowAll((v) => !v)}
             >
-              {showAll ? "− 閉じる" : `＋ もっと見る (${hiddenCount})`}
+              {showAll ? `− ${tx("Close")}` : `＋ ${tx("Show more")} (${hiddenCount})`}
             </button>
           )}
         </div>
@@ -719,9 +736,10 @@ function LiveTargetBar({
   value: string;
   onChange: (v: string) => void;
 }) {
+  const tx = useT();
   return (
     <div className="langbar live">
-      <span className="live-arrow">すべてを翻訳 →</span>
+      <span className="live-arrow">{tx("Translate everything")} →</span>
       <LangSelect value={value} onChange={onChange} />
     </div>
   );
@@ -738,30 +756,22 @@ function LangSelect({
   exclude?: string;
   disabled?: boolean;
 }) {
+  const tx = useT();
   const lang = getLanguage(value);
   return (
     <label className={`langselect${disabled ? " disabled" : ""}`}>
       <span className="langselect-flag">{lang.flag}</span>
       <span className="langselect-name">{lang.name}</span>
-      {!lang.realtime && (
-        <span
-          className="langselect-sub"
-          title="リアルタイム音声には非対応（テキスト翻訳のみ）"
-        >
-          字幕のみ
-        </span>
-      )}
       <span className="langselect-caret">▾</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        aria-label="言語を選択"
+        aria-label={tx("Select language")}
       >
-        {LANGUAGES.map((l) => (
+        {REALTIME_LANGUAGES.map((l) => (
           <option key={l.code} value={l.code} disabled={l.code === exclude}>
             {l.flag} {l.name}
-            {l.realtime ? "" : " ・字幕のみ"}
           </option>
         ))}
       </select>
@@ -787,13 +797,14 @@ function SpeakButton({
   text: string;
   lang?: string;
 }) {
+  const tx = useT();
   const loading = speech.loadingKey === spKey;
   const playing = speech.playingKey === spKey;
   return (
     <button
       type="button"
       className={`speak-btn${playing ? " playing" : ""}`}
-      aria-label={playing ? "停止" : "読み上げ"}
+      aria-label={playing ? tx("Stop") : tx("Read aloud")}
       aria-pressed={playing}
       onClick={() => speech.speak(spKey, text, lang)}
     >
@@ -819,13 +830,16 @@ function ChatTranscript({
   showReading: boolean;
   speakers: Record<string, number>;
 }) {
+  const tx = useT();
   const hasPartial =
     !!partialSource || Object.keys(partialTargets).length > 0;
   if (segments.length === 0 && !hasPartial) {
     return (
       <Empty
-        title="自動で多言語に翻訳"
-        body="「会話を始める」を押して、選んだ言語のどれかでそのまま話してください。話した言語を自動で判定し、ほかの言語すべてに翻訳してチャットに表示します。"
+        title={tx("Auto-translate into every language")}
+        body={tx(
+          "Press “Start conversation” and just speak in any of the languages you picked. We detect the spoken language automatically and translate it into all the others, shown as a chat.",
+        )}
       />
     );
   }
@@ -912,6 +926,7 @@ function ChatMsg({
   showReading?: boolean;
   speaker?: number;
 }) {
+  const tx = useT();
   const lang = getLanguage(srcLang);
   // Speak buttons appear only on finalized lines (not the streaming bubble).
   const canSpeak = !pending && !!speech && !!speakKey;
@@ -934,7 +949,7 @@ function ChatMsg({
             "…"
           )}
           {refined && (
-            <span className="msg-badge" title="GPT-5.5で最適化済み">
+            <span className="msg-badge" title={tx("Optimized with GPT-5.5")}>
               ✨
             </span>
           )}
@@ -956,14 +971,6 @@ function ChatMsg({
               <span className="msg-trans-flag" aria-hidden>
                 {getLanguage(tg.lang).flag}
               </span>
-              {!isRealtimeVoice(tg.lang) && (
-                <span
-                  className="trans-sub-tag"
-                  title="リアルタイム音声には非対応（テキスト翻訳のみ）"
-                >
-                  字幕
-                </span>
-              )}
               {tg.text ? (
                 pending ? (
                   <Typewriter text={tg.text} />
@@ -1011,6 +1018,7 @@ function LiveTranscript({
   showReading: boolean;
   speakers: Record<string, number>;
 }) {
+  const tx = useT();
   const firstVal = (m: Record<string, string>) => Object.values(m)[0] ?? "";
   const firstKey = (m: Record<string, string>) => Object.keys(m)[0];
   const hasPartial =
@@ -1018,11 +1026,13 @@ function LiveTranscript({
   if (segments.length === 0 && !hasPartial) {
     return (
       <Empty
-        title="ライブ翻訳"
+        title={tx("Live translation")}
         body={
           live
-            ? "話しかけてください。聞こえた音声をリアルタイムで翻訳します。"
-            : "出力言語を選び「翻訳をはじめる」を押してください。講演や動画など、聞こえる音声を字幕で翻訳します。"
+            ? tx("Speak — we translate what we hear in real time.")
+            : tx(
+                "Pick an output language and press “Start translating”. For talks, videos and more, we translate the audio you hear as subtitles.",
+              )
         }
       />
     );
@@ -1100,30 +1110,33 @@ function MicHelp({
   message: string | null;
   onRetry: () => void;
 }) {
+  const tx = useT();
   const steps = isMicProblem && platform ? micFixSteps(platform) : [];
   return (
     <div className="michelp" role="alert">
       <div className="michelp-head">
         <span className="michelp-ico">🎤</span>
-        {isMicProblem ? "マイクを使えませんでした" : "エラーが発生しました"}
+        {isMicProblem
+          ? tx("Couldn’t access the microphone")
+          : tx("Something went wrong")}
       </div>
-      {message && <p className="michelp-msg">{message}</p>}
+      {message && <p className="michelp-msg">{tx(message)}</p>}
       {steps.length > 0 && (
         <ol className="michelp-steps">
           {steps.map((s, i) => (
-            <li key={i}>{s}</li>
+            <li key={i}>{tx(s).replace("{app}", platform?.inApp ?? "")}</li>
           ))}
         </ol>
       )}
       <div className="michelp-actions">
         <button className="michelp-btn primary" onClick={onRetry}>
-          もう一度試す
+          {tx("Try again")}
         </button>
         <button
           className="michelp-btn"
           onClick={() => window.location.reload()}
         >
-          再読み込み
+          {tx("Reload")}
         </button>
       </div>
     </div>

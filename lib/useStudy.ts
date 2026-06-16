@@ -207,7 +207,7 @@ export function useStudy() {
   const abortRef = useRef<AbortController | null>(null);
   const accRef = useRef(false);
 
-  const generate = useCallback(async (lines: StudyLine[]) => {
+  const generate = useCallback(async (lines: StudyLine[], lang?: string) => {
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
@@ -217,14 +217,14 @@ export function useStudy() {
       const res = await fetch("/api/study", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lines }),
+        body: JSON.stringify({ lines, lang }),
         signal: ac.signal,
       });
       const data = (await res.json().catch(() => null)) as
         | (Partial<StudySet> & { error?: string })
         | null;
       if (!res.ok) {
-        setError(data?.error ?? "学習教材の生成に失敗しました。");
+        setError(data?.error ?? "Failed to generate study material.");
         return;
       }
       setGenerated({
@@ -233,7 +233,7 @@ export function useStudy() {
       });
     } catch (err) {
       if ((err as Error)?.name === "AbortError") return;
-      setError("通信エラーが発生しました。");
+      setError("A network error occurred.");
     } finally {
       if (abortRef.current === ac) {
         setGenerating(false);
@@ -244,7 +244,7 @@ export function useStudy() {
 
   // Auto-accumulation: generate from the latest lines and silently file every
   // new vocab/grammar item into the saved lists (deduped). One run at a time.
-  const accumulate = useCallback(async (lines: StudyLine[]) => {
+  const accumulate = useCallback(async (lines: StudyLine[], lang?: string) => {
     if (accRef.current || lines.length === 0) return;
     accRef.current = true;
     setAccumulating(true);
@@ -252,7 +252,7 @@ export function useStudy() {
       const res = await fetch("/api/study", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lines }),
+        body: JSON.stringify({ lines, lang }),
       });
       if (!res.ok) return;
       const data = (await res.json().catch(() => null)) as

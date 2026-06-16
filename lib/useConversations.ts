@@ -136,7 +136,7 @@ async function requestMinutes(id: string) {
     if (!res.ok || !data || data.error) {
       patch(id, {
         minutesStatus: "error",
-        minutesError: data?.error ?? "議事録の生成に失敗しました。",
+        minutesError: data?.error ?? "Failed to generate the minutes.",
       });
       return;
     }
@@ -156,7 +156,7 @@ async function requestMinutes(id: string) {
   } catch {
     patch(id, {
       minutesStatus: "error",
-      minutesError: "通信エラーが発生しました。",
+      minutesError: "A network error occurred.",
     });
   }
 }
