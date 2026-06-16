@@ -532,10 +532,10 @@ export default function Translator() {
           <button
             className="audio-toggle log-open"
             onClick={() => setLogOpen(true)}
-            title="保存した会話ログと議事録を見る"
+            title="議事録と会話ログを見る"
           >
-            <span className="audio-ico">🗂</span>
-            ログ
+            <span className="audio-ico">📝</span>
+            議事録
             {convos.conversations.length > 0 && (
               <span className="study-count">{convos.conversations.length}</span>
             )}

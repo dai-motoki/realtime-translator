@@ -1213,24 +1213,11 @@ select {
   align-items: center;
   gap: 8px;
 }
-.logcard-head {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-align: left;
-  background: none;
-  border: none;
-  color: var(--fg);
-  font-size: 14.5px;
-  font-weight: 700;
-}
-.logcard-caret {
-  color: var(--fg-faint);
-  font-size: 12px;
-}
 .logcard-title {
   flex: 1 1 auto;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--fg);
 }
 .logcard-meta {
   display: flex;
@@ -1300,25 +1287,44 @@ select {
   line-height: 1.55;
 }
 
-.logcard-transcript {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  max-height: 40vh;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-.logline-src {
-  font-size: 13px;
-  line-height: 1.5;
-}
-.logline-tgt {
-  margin-top: 2px;
+/* Open the full chat history for one saved conversation */
+.log-open-chat {
+  margin-top: 11px;
+  width: 100%;
+  padding: 9px;
   font-size: 12.5px;
-  line-height: 1.5;
+  font-weight: 650;
+  color: var(--accent);
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+
+/* Back arrow in the detail header */
+.log-back {
+  width: 28px;
+  height: 28px;
+  margin-right: 2px;
+  border-radius: 50%;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line);
+}
+
+/* Detail view (議事録 + chat history) */
+.log-detail-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+.log-chat-head {
+  margin: 16px 0 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
   color: var(--fg-dim);
 }
 
