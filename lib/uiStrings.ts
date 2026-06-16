@@ -116,6 +116,9 @@ export const UI_STRINGS: string[] = [
   // ---- Speaker diarization ----
   "Speaker {n}",
 
+  // ---- i18n status ----
+  "Translating…",
+
   // ---- Hook / network errors (English source; translated like everything else) ----
   "Failed to generate study material.",
   "A network error occurred.",

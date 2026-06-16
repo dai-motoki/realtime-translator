@@ -138,17 +138,20 @@ select {
   color: var(--fg-faint);
 }
 .langsw-pop {
-  position: absolute;
-  right: 0;
-  margin-top: 8px;
-  width: 280px;
-  max-width: 84vw;
+  /* Anchored to the viewport (not the button) so it never spills off-screen on
+     a narrow phone — the menu always sits just under the header, on the right. */
+  position: fixed;
+  top: calc(var(--safe-top) + 56px);
+  right: 8px;
+  left: auto;
+  width: min(300px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
   background: var(--bg-elev-2);
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
   overflow: hidden;
-  z-index: 100;
+  z-index: 1000;
 }
 .langsw-search {
   display: block;
@@ -204,6 +207,54 @@ select {
 .langsw-item.current {
   color: var(--accent);
   font-weight: 650;
+}
+
+/* On phones, keep the switcher compact (flag + count) so the mode toggle fits. */
+@media (max-width: 520px) {
+  .langsw-name {
+    display: none;
+  }
+  .langsw-btn {
+    max-width: none;
+    padding: 0 8px;
+  }
+  .topbar-right {
+    gap: 8px;
+  }
+}
+
+/* ---- UI translation progress spinner ---- */
+.i18n-translating {
+  position: fixed;
+  top: calc(var(--safe-top) + 56px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg-dim);
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.i18n-spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  animation: i18n-spin 0.7s linear infinite;
+}
+@keyframes i18n-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .brand {
