@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -15,6 +16,8 @@ import {
 } from "@/lib/languages";
 import { useTranslator, type Segment } from "@/lib/useTranslator";
 import { useSpeech } from "@/lib/useSpeech";
+import { useStudy, type StudyLine } from "@/lib/useStudy";
+import { StudyPanel } from "./StudyPanel";
 import { Typewriter } from "./Typewriter";
 import {
   detectPlatform,
@@ -49,6 +52,9 @@ export default function Translator() {
   const t = useTranslator(audioRef);
   // On-demand text-to-speech: tap any finalized line to hear it spoken.
   const speech = useSpeech();
+  // Vocabulary + grammar study built from the conversation, saved on-device.
+  const study = useStudy();
+  const [studyOpen, setStudyOpen] = useState(false);
 
   const [mode, setMode] = useState<Mode>("talk");
 
@@ -256,6 +262,20 @@ export default function Translator() {
   const live = t.status === "live";
   const connecting = t.status === "connecting";
 
+  // Compact view of the conversation for the study generator.
+  const studyLines: StudyLine[] = useMemo(
+    () =>
+      t.segments.map((s) => ({
+        source: s.source,
+        sourceLang: s.sourceLang,
+        targets: Object.entries(s.targets).map(([lang, target]) => ({
+          lang,
+          target,
+        })),
+      })),
+    [t.segments],
+  );
+
   const micBlocked =
     micPerm === "denied" ||
     (!!t.error &&
@@ -368,6 +388,17 @@ export default function Translator() {
             発音記号 {showReading ? "ON" : "OFF"}
           </button>
           <button
+            className="audio-toggle study-open"
+            onClick={() => setStudyOpen(true)}
+            title="この会話から単語・文法を学ぶ"
+          >
+            <span className="audio-ico">📚</span>
+            学習
+            {study.savedVocab.length > 0 && (
+              <span className="study-count">{study.savedVocab.length}</span>
+            )}
+          </button>
+          <button
             className={`audio-toggle flip ${flipped ? "on" : ""}`}
             onClick={() => setFlipped((v) => !v)}
             aria-pressed={flipped}
@@ -399,6 +430,14 @@ export default function Translator() {
           </button>
         </div>
       </footer>
+
+      <StudyPanel
+        open={studyOpen}
+        onClose={() => setStudyOpen(false)}
+        study={study}
+        speech={speech}
+        lines={studyLines}
+      />
     </div>
   );
 }
