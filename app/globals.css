@@ -1192,6 +1192,39 @@ select {
   flex-direction: column;
   gap: 11px;
 }
+
+/* Vocabulary "deck": one card per screen so dwell time is attributable to a
+   single word. The header + filter stay put; the deck below snap-scrolls. */
+.study-body.deck-mode {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;
+}
+.study-list--deck {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.study-deck {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: y mandatory;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding-bottom: 14px;
+}
+.study-deck .vcard {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  /* Fill the visible deck so only one card shows at a time. */
+  min-height: calc(100% - 6px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 .study-listhead {
   display: flex;
   align-items: center;

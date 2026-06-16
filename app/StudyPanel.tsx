@@ -133,13 +133,13 @@ export function StudyPanel({
           </button>
         </div>
 
-        <div className="study-body">
+        <div className={`study-body${tab === "vocab" ? " deck-mode" : ""}`}>
           {tab === "learn" && (
             <LearnTab study={study} speech={speech} lines={lines} />
           )}
 
           {tab === "vocab" && (
-            <div className="study-list">
+            <div className="study-list study-list--deck">
               <div className="study-listhead">
                 <span>
                   {study.savedVocab.length} {tx("words")}
@@ -261,86 +261,94 @@ function LangFilter({
 
 // Accumulates how long a card stays in view (≥60% visible) and reports it, so
 // the learning sort can rank words by how long you dwelt on them.
-function useDwell(
-  key: string,
-  flush: (key: string, ms: number) => void,
-): (el: HTMLDivElement | null) => void {
-  const elRef = useRef<HTMLDivElement | null>(null);
-  const startRef = useRef<number | null>(null);
-  const setRef = (el: HTMLDivElement | null) => {
-    elRef.current = el;
-  };
+//
+// Because the deck shows one card per screen (scroll-snap), exactly one card is
+// "dominant" at a time. A single observer (rooted on the deck) tracks which card
+// fills the screen and credits the time spent on it to that card alone, so the
+// measurement isn't smeared across several visible cards.
+function useDeckDwell(flush: (key: string, ms: number) => void) {
+  const deckRef = useRef<HTMLDivElement | null>(null);
+  const ioRef = useRef<IntersectionObserver | null>(null);
+  const elsRef = useRef(new Map<string, HTMLElement>());
+  const keyByEl = useRef(new WeakMap<Element, string>());
+  const ratiosRef = useRef(new Map<string, number>());
+  const activeRef = useRef<{ key: string; since: number } | null>(null);
+  const flushRef = useRef(flush);
   useEffect(() => {
-    const el = elRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    const commit = () => {
-      if (startRef.current != null) {
-        flush(key, Date.now() - startRef.current);
-        startRef.current = null;
+    flushRef.current = flush;
+  });
+
+  const setActive = (key: string | null) => {
+    const cur = activeRef.current;
+    if (cur?.key === key) return;
+    if (cur) flushRef.current(cur.key, Date.now() - cur.since);
+    activeRef.current = key ? { key, since: Date.now() } : null;
+  };
+
+  const recompute = () => {
+    let best: string | null = null;
+    let bestR = 0;
+    ratiosRef.current.forEach((r, k) => {
+      if (r > bestR) {
+        bestR = r;
+        best = k;
       }
-    };
+    });
+    // A card counts once it covers at least half the deck (one card per screen).
+    setActive(bestR >= 0.5 ? best : null);
+  };
+
+  useEffect(() => {
+    const root = deckRef.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
     const io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
-          if (e.isIntersecting && e.intersectionRatio >= 0.6) {
-            startRef.current ??= Date.now();
-          } else {
-            commit();
-          }
+          const key = keyByEl.current.get(e.target);
+          if (key) ratiosRef.current.set(key, e.intersectionRatio);
         }
+        recompute();
       },
-      { threshold: [0, 0.6, 1] },
+      { root, threshold: [0, 0.5, 1] },
     );
-    io.observe(el);
+    ioRef.current = io;
+    for (const el of elsRef.current.values()) io.observe(el);
     const onVis = () => {
-      if (document.hidden) commit();
+      if (document.hidden) setActive(null);
+      else recompute();
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {
-      commit();
+      setActive(null);
       io.disconnect();
+      ioRef.current = null;
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [key, flush]);
-  return setRef;
+    // Mount once: flush is read through flushRef so it never needs to re-run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Ref callback per card key: (un)observe its element as it mounts/unmounts.
+  const cardRef = (key: string) => (el: HTMLDivElement | null) => {
+    const old = elsRef.current.get(key);
+    if (old && ioRef.current) ioRef.current.unobserve(old);
+    if (el) {
+      elsRef.current.set(key, el);
+      keyByEl.current.set(el, key);
+      ioRef.current?.observe(el);
+    } else {
+      elsRef.current.delete(key);
+      ratiosRef.current.delete(key);
+    }
+  };
+
+  return { deckRef, cardRef };
 }
 
-// Card with dwell tracking; one per saved word.
-function TrackedVocabCard({
-  item,
-  speech,
-  hiddenMeaning,
-  onToggle,
-  onRemove,
-  onDwell,
-}: {
-  item: VocabItem;
-  speech: Speech;
-  hiddenMeaning: boolean;
-  onToggle: () => void;
-  onRemove: () => void;
-  onDwell: (key: string, ms: number) => void;
-}) {
-  const key = vocabKey(item);
-  const cardRef = useDwell(key, onDwell);
-  return (
-    <VocabCard
-      item={item}
-      speech={speech}
-      hiddenMeaning={hiddenMeaning}
-      onToggle={onToggle}
-      saved
-      showStatus
-      onRemove={onRemove}
-      cardRef={cardRef}
-    />
-  );
-}
-
-// The saved Vocabulary list, ordered for learning: unseen words first, then the
-// ones you dwelt on longest. The order is frozen while you read (it only
-// recomputes when the set of words or the language filter changes) so cards
-// don't jump as dwell times tick up.
+// The saved Vocabulary list: one card per screen (snap scroll), ordered for
+// learning — unseen words first, then the ones you dwelt on longest. The order
+// is frozen while you read (it only recomputes when the set of words or the
+// language filter changes) so cards don't jump as dwell times tick up.
 function SavedVocabList({
   study,
   speech,
@@ -357,6 +365,7 @@ function SavedVocabList({
   onToggleReveal: (key: string) => void;
 }) {
   const tx = useT();
+  const { deckRef, cardRef } = useDeckDwell(study.addVocabDwell);
   const filtered = useMemo(
     () =>
       study.savedVocab.filter(
@@ -391,23 +400,25 @@ function SavedVocabList({
     return <p className="study-empty">{tx("No words in this language yet.")}</p>;
   }
   return (
-    <>
+    <div className="study-deck" ref={deckRef}>
       {display.map((v) => {
         const key = vocabKey(v);
         const hidden = review && !revealed.has(key);
         return (
-          <TrackedVocabCard
+          <VocabCard
             key={key}
             item={v}
             speech={speech}
             hiddenMeaning={hidden}
             onToggle={() => review && onToggleReveal(key)}
+            saved
+            showStatus
             onRemove={() => study.removeVocab(key)}
-            onDwell={study.addVocabDwell}
+            cardRef={cardRef(key)}
           />
         );
       })}
-    </>
+    </div>
   );
 }
 
