@@ -7,7 +7,12 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { LANGUAGES, getLanguage, detectLanguage } from "@/lib/languages";
+import {
+  LANGUAGES,
+  getLanguage,
+  detectLanguage,
+  detectLanguageByOutputs,
+} from "@/lib/languages";
 import { useTranslator, type Segment } from "@/lib/useTranslator";
 import { Typewriter } from "./Typewriter";
 import {
@@ -540,7 +545,13 @@ function ChatTranscript({
       })}
       {hasPartial &&
         (() => {
-          const src = detectLanguage(partialSource, convLangs) ?? convLangs[0];
+          // While the source is still streaming and script-ambiguous (e.g.
+          // Latin-script languages), use the live translations to tell which
+          // language is being spoken, matching how finalized lines resolve it.
+          const src =
+            detectLanguage(partialSource, convLangs) ??
+            detectLanguageByOutputs(partialSource, convLangs, partialTargets) ??
+            convLangs[0];
           return (
             <ChatMsg
               side={sideOf(src)}
