@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { SITE_LOG_BEACON_JS } from "@/lib/siteLogBeacon";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -31,7 +32,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body>{children}</body>
+      <body>
+        {children}
+        {/* 匿名アクセスログのビーコン（zentou-ops の /admin/site-log に集約） */}
+        <script dangerouslySetInnerHTML={{ __html: SITE_LOG_BEACON_JS }} />
+      </body>
     </html>
   );
 }
