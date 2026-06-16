@@ -379,6 +379,14 @@ function LangChips({
   open: boolean;
   onToggleOpen: () => void;
 }) {
+  const [showAll, setShowAll] = useState(false);
+  // Common languages up-front; the rest are shown only when "もっと見る" is
+  // tapped — but a selected non-common language always stays visible.
+  const shown = showAll
+    ? LANGUAGES
+    : LANGUAGES.filter((l) => l.common || selected.includes(l.code));
+  const hiddenCount = LANGUAGES.length - shown.length;
+
   return (
     <div className="langchips-wrap">
       <button
@@ -397,7 +405,7 @@ function LangChips({
       </button>
       {open && (
         <div className={`langchips${disabled ? " disabled" : ""}`}>
-          {LANGUAGES.map((l) => {
+          {shown.map((l) => {
             const on = selected.includes(l.code);
             return (
               <button
@@ -413,6 +421,15 @@ function LangChips({
               </button>
             );
           })}
+          {(showAll || hiddenCount > 0) && (
+            <button
+              type="button"
+              className="langchip more"
+              onClick={() => setShowAll((v) => !v)}
+            >
+              {showAll ? "− 閉じる" : `＋ もっと見る (${hiddenCount})`}
+            </button>
+          )}
         </div>
       )}
     </div>
