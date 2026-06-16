@@ -336,13 +336,16 @@ export default function Translator() {
     t.clear();
   }, [t, diar]);
 
-  // ---- Speaker diarization ----
+  // ---- Speaker diarization (only when Picovoice is configured) ----
   // Record the mic while we're listening; release the recorder when we stop.
+  // With no AccessKey, `configured` is false and this never touches the mic —
+  // the app runs exactly as it did before the feature existed.
   useEffect(() => {
+    if (!diar.configured) return;
     if (t.activeStream) void diar.start(t.activeStream);
     else diar.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t.activeStream]);
+  }, [t.activeStream, diar.configured]);
 
   // A couple seconds after the conversation grows, re-diarize the whole
   // recording so speaker labels appear (and sharpen) in near-real-time.
