@@ -376,6 +376,11 @@ select {
   background: var(--accent);
   border-color: var(--accent);
 }
+.langchip.more {
+  color: var(--accent);
+  background: transparent;
+  border-style: dashed;
+}
 .langchips.disabled {
   opacity: 0.55;
 }

@@ -8,22 +8,51 @@ export interface Language {
   /** Short English label */
   label: string;
   flag: string;
+  /** Shown up-front (vs. behind the "もっと見る" expander). */
+  common?: boolean;
 }
 
 export const LANGUAGES: Language[] = [
-  { code: "ja", name: "日本語", label: "Japanese", flag: "🇯🇵" },
-  { code: "en", name: "English", label: "English", flag: "🇺🇸" },
-  { code: "zh", name: "中文", label: "Chinese", flag: "🇨🇳" },
-  { code: "ko", name: "한국어", label: "Korean", flag: "🇰🇷" },
-  { code: "es", name: "Español", label: "Spanish", flag: "🇪🇸" },
-  { code: "fr", name: "Français", label: "French", flag: "🇫🇷" },
-  { code: "de", name: "Deutsch", label: "German", flag: "🇩🇪" },
-  { code: "it", name: "Italiano", label: "Italian", flag: "🇮🇹" },
-  { code: "pt", name: "Português", label: "Portuguese", flag: "🇧🇷" },
-  { code: "ru", name: "Русский", label: "Russian", flag: "🇷🇺" },
-  { code: "hi", name: "हिन्दी", label: "Hindi", flag: "🇮🇳" },
-  { code: "ar", name: "العربية", label: "Arabic", flag: "🇸🇦" },
-  { code: "nl", name: "Nederlands", label: "Dutch", flag: "🇳🇱" },
+  // Common languages — shown by default.
+  { code: "ja", name: "日本語", label: "Japanese", flag: "🇯🇵", common: true },
+  { code: "en", name: "English", label: "English", flag: "🇺🇸", common: true },
+  { code: "zh", name: "中文", label: "Chinese", flag: "🇨🇳", common: true },
+  { code: "ko", name: "한국어", label: "Korean", flag: "🇰🇷", common: true },
+  { code: "es", name: "Español", label: "Spanish", flag: "🇪🇸", common: true },
+  { code: "fr", name: "Français", label: "French", flag: "🇫🇷", common: true },
+  { code: "de", name: "Deutsch", label: "German", flag: "🇩🇪", common: true },
+  { code: "it", name: "Italiano", label: "Italian", flag: "🇮🇹", common: true },
+  { code: "pt", name: "Português", label: "Portuguese", flag: "🇧🇷", common: true },
+  { code: "ru", name: "Русский", label: "Russian", flag: "🇷🇺", common: true },
+  { code: "hi", name: "हिन्दी", label: "Hindi", flag: "🇮🇳", common: true },
+  { code: "ar", name: "العربية", label: "Arabic", flag: "🇸🇦", common: true },
+  { code: "nl", name: "Nederlands", label: "Dutch", flag: "🇳🇱", common: true },
+  // More languages — revealed via the "もっと見る" expander.
+  { code: "id", name: "Bahasa Indonesia", label: "Indonesian", flag: "🇮🇩" },
+  { code: "th", name: "ไทย", label: "Thai", flag: "🇹🇭" },
+  { code: "vi", name: "Tiếng Việt", label: "Vietnamese", flag: "🇻🇳" },
+  { code: "tr", name: "Türkçe", label: "Turkish", flag: "🇹🇷" },
+  { code: "pl", name: "Polski", label: "Polish", flag: "🇵🇱" },
+  { code: "uk", name: "Українська", label: "Ukrainian", flag: "🇺🇦" },
+  { code: "sv", name: "Svenska", label: "Swedish", flag: "🇸🇪" },
+  { code: "da", name: "Dansk", label: "Danish", flag: "🇩🇰" },
+  { code: "fi", name: "Suomi", label: "Finnish", flag: "🇫🇮" },
+  { code: "no", name: "Norsk", label: "Norwegian", flag: "🇳🇴" },
+  { code: "cs", name: "Čeština", label: "Czech", flag: "🇨🇿" },
+  { code: "el", name: "Ελληνικά", label: "Greek", flag: "🇬🇷" },
+  { code: "he", name: "עברית", label: "Hebrew", flag: "🇮🇱" },
+  { code: "ro", name: "Română", label: "Romanian", flag: "🇷🇴" },
+  { code: "hu", name: "Magyar", label: "Hungarian", flag: "🇭🇺" },
+  { code: "ms", name: "Bahasa Melayu", label: "Malay", flag: "🇲🇾" },
+  { code: "bn", name: "বাংলা", label: "Bengali", flag: "🇧🇩" },
+  { code: "ta", name: "தமிழ்", label: "Tamil", flag: "🇮🇳" },
+  { code: "ur", name: "اردو", label: "Urdu", flag: "🇵🇰" },
+  { code: "fa", name: "فارسی", label: "Persian", flag: "🇮🇷" },
+  { code: "tl", name: "Filipino", label: "Filipino", flag: "🇵🇭" },
+  { code: "sk", name: "Slovenčina", label: "Slovak", flag: "🇸🇰" },
+  { code: "bg", name: "Български", label: "Bulgarian", flag: "🇧🇬" },
+  { code: "hr", name: "Hrvatski", label: "Croatian", flag: "🇭🇷" },
+  { code: "sr", name: "Српски", label: "Serbian", flag: "🇷🇸" },
 ];
 
 const BY_CODE = new Map(LANGUAGES.map((l) => [l.code, l]));
@@ -33,7 +62,10 @@ export function getLanguage(code: string): Language {
 }
 
 // Latin-script output languages (used to disambiguate a Latin transcript).
-const LATIN_LANGS = new Set(["en", "es", "fr", "de", "it", "pt", "nl"]);
+const LATIN_LANGS = new Set([
+  "en", "es", "fr", "de", "it", "pt", "nl", "id", "vi", "tr", "pl", "sv", "da",
+  "fi", "no", "cs", "ro", "hu", "ms", "tl", "sk", "hr",
+]);
 
 function scriptOf(text: string): string | null {
   if (/[぀-ゟ゠-ヿ]/.test(text)) return "ja"; // kana
