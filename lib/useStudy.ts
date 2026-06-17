@@ -225,21 +225,121 @@ function mergeGrammar(list: GrammarItem[], item: GrammarItem): GrammarItem[] {
   return next.sort(byCount);
 }
 
-/**
- * Learning-optimised order: words you haven't looked at yet float to the top so
- * you meet them first; once seen, the ones you dwelt on longest (i.e. struggled
- * with) come next, with frequency/recency breaking ties.
- */
-export function sortForLearning<
+/* ------------------------------------------------------------------------- *
+ * Learning-optimised ordering (engagement + similarity diffusion)
+ *
+ * Goal: cards you spend the most time on rise to the top, AND cards whose text
+ * is "near in vector space" to those high-dwell cards rise with them — seen and
+ * unseen alike, ranked together rather than always forcing unseen cards on top.
+ *
+ * Two well-studied ingredients:
+ *
+ *  1. Dwell time as an engagement signal. Dwell time on items is roughly
+ *     log-normally distributed (Yi et al., "Beyond Clicks: Dwell Time for
+ *     Personalization", RecSys 2014), so we use log(1 + seconds) as the raw
+ *     interest seed y_i rather than raw milliseconds.
+ *
+ *  2. Manifold ranking / label propagation (Zhou et al., "Learning with Local
+ *     and Global Consistency", NeurIPS 2003). The seed scores are diffused over
+ *     a similarity graph W via the symmetric-normalised operator
+ *     S = D^{-1/2} W D^{-1/2}, iterating  F ← αSF + (1−α)Y  to a stable point.
+ *     This spreads engagement from a card to its neighbours, so vocabulary that
+ *     looks/behaves like something you study a lot is surfaced too.
+ *
+ * The similarity W_ij is the cosine between character-bigram vectors of the two
+ * cards' text (a real, if lexical, vector space — upgradeable to semantic
+ * embeddings later), kept sparse with a minimum-similarity threshold.
+ * ------------------------------------------------------------------------- */
+
+// Fall back to a plain sort beyond this many items to keep the O(n²) graph
+// build from janking the UI.
+const RANK_MAX = 4000;
+const RANK_SIM_MIN = 0.3; // ignore weak edges (keeps the graph sparse + meaningful)
+const RANK_ALPHA = 0.6; // propagation strength (0 = engagement only, →1 = all diffusion)
+const RANK_ITERS = 20; // iterations to converge the diffusion
+
+const byDwell = <T extends { count?: number; at?: number; dwell?: number }>(
+  a: T,
+  b: T,
+) => (b.dwell ?? 0) - (a.dwell ?? 0) || byCount(a, b);
+
+// Bag-of-character-bigrams vector for one card's text.
+function bigramVec(s: string): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const g of bigrams(norm(s))) m.set(g, (m.get(g) ?? 0) + 1);
+  return m;
+}
+
+function cosine(
+  a: Map<string, number>,
+  na: number,
+  b: Map<string, number>,
+  nb: number,
+): number {
+  if (!na || !nb) return 0;
+  const [small, big] = a.size <= b.size ? [a, b] : [b, a];
+  let dot = 0;
+  for (const [g, c] of small) {
+    const d = big.get(g);
+    if (d) dot += c * d;
+  }
+  return dot / (na * nb);
+}
+
+export function rankForLearning<
   T extends { count?: number; at?: number; dwell?: number; seen?: boolean },
->(list: T[]): T[] {
-  return list.slice().sort((a, b) => {
-    const sa = a.seen ? 1 : 0;
-    const sb = b.seen ? 1 : 0;
-    if (sa !== sb) return sa - sb; // unseen (0) first
-    if (!a.seen) return byCount(a, b); // both unseen: frequency then recency
-    return (b.dwell ?? 0) - (a.dwell ?? 0) || byCount(a, b); // both seen: longest dwell first
+>(items: T[], textOf: (it: T) => string): T[] {
+  const n = items.length;
+  if (n <= 2 || n > RANK_MAX) return items.slice().sort(byDwell);
+
+  // Vectors + L2 norms.
+  const vecs = items.map((it) => bigramVec(textOf(it)));
+  const norms = vecs.map((v) => {
+    let s = 0;
+    for (const c of v.values()) s += c * c;
+    return Math.sqrt(s);
   });
+
+  // Sparse similarity graph (upper triangle) + weighted degrees.
+  const ei: number[] = [];
+  const ej: number[] = [];
+  const ew: number[] = [];
+  const deg = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const w = cosine(vecs[i], norms[i], vecs[j], norms[j]);
+      if (w >= RANK_SIM_MIN) {
+        ei.push(i);
+        ej.push(j);
+        ew.push(w);
+        deg[i] += w;
+        deg[j] += w;
+      }
+    }
+  }
+
+  // Seed: log(1 + dwell seconds) — dwell time is ~log-normal.
+  const y = items.map((it) => Math.log1p((it.dwell ?? 0) / 1000));
+
+  // Symmetric-normalised diffusion: F ← αSF + (1−α)Y.
+  let f = y.slice();
+  const invSqrtDeg = Array.from(deg, (d) => (d > 0 ? 1 / Math.sqrt(d) : 0));
+  for (let it = 0; it < RANK_ITERS; it++) {
+    const nf = y.map((v) => (1 - RANK_ALPHA) * v);
+    for (let e = 0; e < ew.length; e++) {
+      const i = ei[e];
+      const j = ej[e];
+      const s = RANK_ALPHA * ew[e] * invSqrtDeg[i] * invSqrtDeg[j];
+      nf[i] += s * f[j];
+      nf[j] += s * f[i];
+    }
+    f = nf;
+  }
+
+  return items
+    .map((it, i) => ({ it, score: f[i] }))
+    .sort((a, b) => b.score - a.score || byDwell(a.it, b.it))
+    .map((x) => x.it);
 }
 
 function load<T>(key: string): T[] {

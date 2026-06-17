@@ -16,7 +16,7 @@ import {
   vocabKey,
   grammarKey,
   exampleList,
-  sortForLearning,
+  rankForLearning,
   type StudyLine,
   type VocabItem,
   type GrammarItem,
@@ -193,6 +193,7 @@ export function StudyPanel({
                   items={study.savedVocab}
                   langFilter={vocabLang}
                   keyOf={vocabKey}
+                  textOf={(v) => v.term}
                   onDwell={study.addVocabDwell}
                   emptyText={tx("No words in this language yet.")}
                   renderCard={(v, cardRef) => {
@@ -234,6 +235,7 @@ export function StudyPanel({
                   items={study.savedGrammar}
                   langFilter={grammarLang}
                   keyOf={grammarKey}
+                  textOf={(g) => g.title}
                   onDwell={study.addGrammarDwell}
                   emptyText={tx("No grammar points in this language yet.")}
                   renderCard={(g, cardRef) => (
@@ -398,6 +400,7 @@ function SavedDeck<
   items,
   langFilter,
   keyOf,
+  textOf,
   onDwell,
   emptyText,
   renderCard,
@@ -405,6 +408,8 @@ function SavedDeck<
   items: T[];
   langFilter: string;
   keyOf: (item: T) => string;
+  /** Text used to build the similarity graph for the learning ranking. */
+  textOf: (item: T) => string;
   onDwell: (key: string, ms: number) => void;
   emptyText: string;
   renderCard: (
@@ -420,16 +425,22 @@ function SavedDeck<
 
   const keySig = filtered.map(keyOf).join("|");
   const [orderedKeys, setOrderedKeys] = useState<string[]>([]);
-  // Keep the latest list available to the resort effect without making it a
-  // dependency, so dwell ticks don't re-trigger (and reorder) the list.
+  // Keep the latest list/accessors available to the resort effect without making
+  // them dependencies, so dwell ticks don't re-trigger (and reorder) the list.
   const filteredRef = useRef(filtered);
   const keyOfRef = useRef(keyOf);
+  const textOfRef = useRef(textOf);
   useEffect(() => {
     filteredRef.current = filtered;
     keyOfRef.current = keyOf;
+    textOfRef.current = textOf;
   });
   useEffect(() => {
-    setOrderedKeys(sortForLearning(filteredRef.current).map(keyOfRef.current));
+    setOrderedKeys(
+      rankForLearning(filteredRef.current, textOfRef.current).map(
+        keyOfRef.current,
+      ),
+    );
   }, [keySig]);
 
   const display = useMemo(() => {
