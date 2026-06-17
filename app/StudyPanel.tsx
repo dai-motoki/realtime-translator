@@ -12,6 +12,11 @@ import { getLanguage, LANGUAGES } from "@/lib/languages";
 import { useT, useUiLang } from "@/lib/i18n";
 import { useSpeech } from "@/lib/useSpeech";
 import {
+  ensureEmbeddings,
+  getEmbedding,
+  useEmbeddingsVersion,
+} from "@/lib/embeddings";
+import {
   useStudy,
   vocabKey,
   grammarKey,
@@ -423,6 +428,7 @@ function SavedDeck<
     [items, langFilter],
   );
 
+  const embVersion = useEmbeddingsVersion();
   const keySig = filtered.map(keyOf).join("|");
   const [orderedKeys, setOrderedKeys] = useState<string[]>([]);
   // Keep the latest list/accessors available to the resort effect without making
@@ -435,13 +441,21 @@ function SavedDeck<
     keyOfRef.current = keyOf;
     textOfRef.current = textOf;
   });
+  // Fetch semantic embeddings for the current cards; the ranking upgrades from
+  // lexical to semantic similarity once they arrive (bumping embVersion).
+  useEffect(() => {
+    void ensureEmbeddings(filteredRef.current.map(textOfRef.current));
+  }, [keySig]);
+  // Re-rank when the set/filter changes or new embeddings land.
   useEffect(() => {
     setOrderedKeys(
-      rankForLearning(filteredRef.current, textOfRef.current).map(
-        keyOfRef.current,
-      ),
+      rankForLearning(
+        filteredRef.current,
+        textOfRef.current,
+        getEmbedding,
+      ).map(keyOfRef.current),
     );
-  }, [keySig]);
+  }, [keySig, embVersion]);
 
   const display = useMemo(() => {
     const byKey = new Map(filtered.map((it) => [keyOf(it), it]));

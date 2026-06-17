@@ -254,7 +254,11 @@ function mergeGrammar(list: GrammarItem[], item: GrammarItem): GrammarItem[] {
 // Fall back to a plain sort beyond this many items to keep the O(n²) graph
 // build from janking the UI.
 const RANK_MAX = 4000;
-const RANK_SIM_MIN = 0.3; // ignore weak edges (keeps the graph sparse + meaningful)
+// Use the (denser) semantic-embedding graph only up to this size; above it the
+// cheaper sparse bigram graph is used instead.
+const EMB_MAX = 1500;
+const RANK_SIM_MIN = 0.3; // bigram: ignore weak edges (sparse + meaningful)
+const EMB_SIM_MIN = 0.45; // embeddings sit higher; require a stronger match
 const RANK_ALPHA = 0.6; // propagation strength (0 = engagement only, →1 = all diffusion)
 const RANK_ITERS = 20; // iterations to converge the diffusion
 
@@ -286,19 +290,47 @@ function cosine(
   return dot / (na * nb);
 }
 
+// Cosine of two unit-length embedding vectors = their dot product.
+function dotUnit(a: Float32Array, b: Float32Array): number {
+  const len = Math.min(a.length, b.length);
+  let dot = 0;
+  for (let i = 0; i < len; i++) dot += a[i] * b[i];
+  return dot;
+}
+
 export function rankForLearning<
   T extends { count?: number; at?: number; dwell?: number; seen?: boolean },
->(items: T[], textOf: (it: T) => string): T[] {
+>(
+  items: T[],
+  textOf: (it: T) => string,
+  embOf?: (text: string) => Float32Array | undefined,
+): T[] {
   const n = items.length;
   if (n <= 2 || n > RANK_MAX) return items.slice().sort(byDwell);
 
-  // Vectors + L2 norms.
-  const vecs = items.map((it) => bigramVec(textOf(it)));
-  const norms = vecs.map((v) => {
-    let s = 0;
-    for (const c of v.values()) s += c * c;
-    return Math.sqrt(s);
-  });
+  const texts = items.map(textOf);
+  // Prefer real semantic embeddings when every card has one cached; otherwise
+  // fall back to the lexical character-bigram vectors.
+  const embs = embOf ? texts.map((t) => embOf(t)) : [];
+  const useEmb =
+    !!embOf &&
+    n <= EMB_MAX &&
+    embs.every((e): e is Float32Array => !!e && e.length > 0);
+  const simMin = useEmb ? EMB_SIM_MIN : RANK_SIM_MIN;
+
+  const vecs = useEmb ? null : texts.map((t) => bigramVec(t));
+  const norms = vecs
+    ? vecs.map((v) => {
+        let s = 0;
+        for (const c of v.values()) s += c * c;
+        return Math.sqrt(s);
+      })
+    : null;
+
+  const sim = (i: number, j: number): number =>
+    useEmb
+      ? dotUnit(embs[i] as Float32Array, embs[j] as Float32Array)
+      : cosine(vecs![i], norms![i], vecs![j], norms![j]);
 
   // Sparse similarity graph (upper triangle) + weighted degrees.
   const ei: number[] = [];
@@ -307,8 +339,8 @@ export function rankForLearning<
   const deg = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      const w = cosine(vecs[i], norms[i], vecs[j], norms[j]);
-      if (w >= RANK_SIM_MIN) {
+      const w = sim(i, j);
+      if (w >= simMin) {
         ei.push(i);
         ej.push(j);
         ew.push(w);
