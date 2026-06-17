@@ -1399,6 +1399,23 @@ select {
 .study-ex {
   margin-top: 6px;
 }
+/* Original example line + its speak button on one row. */
+.study-ex-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.study-ex-line > .vcard-example,
+.study-ex-line > .gcard-example {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.speak-btn--sm {
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 2px 5px;
+  line-height: 1.2;
+}
 .study-ex + .study-ex {
   padding-top: 6px;
   border-top: 1px dashed var(--line);
