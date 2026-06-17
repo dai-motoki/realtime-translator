@@ -239,6 +239,7 @@ export function StudyPanel({
                   renderCard={(g, cardRef) => (
                     <GrammarCard
                       item={g}
+                      speech={speech}
                       saved
                       showStatus
                       onRemove={() => study.removeGrammar(grammarKey(g))}
@@ -514,6 +515,7 @@ function LearnTab({
               <GrammarCard
                 key={grammarKey(g)}
                 item={g}
+                speech={speech}
                 saved={study.hasGrammar(g)}
                 onSave={() => study.saveGrammar(g)}
               />
@@ -616,36 +618,64 @@ function VocabCard({
       ) : (
         <p className="vcard-meaning">{item.meaning}</p>
       )}
-      {!hiddenMeaning && <Examples item={item} />}
+      {!hiddenMeaning && (
+        <Examples item={item} speech={speech} keyBase={spKey} />
+      )}
     </div>
   );
 }
 
 // Renders every example sentence kept for an item, each paired with its own
-// translation so the original and the translation always stay in sync.
+// translation so the original and the translation always stay in sync. Each
+// example's original-language line gets a speak button.
 function Examples({
   item,
+  speech,
+  keyBase,
   variant = "vcard",
 }: {
   item: VocabItem | GrammarItem;
+  speech: Speech;
+  keyBase: string;
   variant?: "vcard" | "gcard";
 }) {
+  const tx = useT();
   const examples = exampleList(item);
   if (examples.length === 0) return null;
   return (
     <>
-      {examples.map((ex, i) => (
-        <div className="study-ex" key={i}>
-          <p className={`${variant}-example`}>“{ex.text}”</p>
-          {ex.local && <p className={`${variant}-example-local`}>{ex.local}</p>}
-        </div>
-      ))}
+      {examples.map((ex, i) => {
+        const spKey = `${keyBase}:ex:${i}`;
+        const playing = speech.playingKey === spKey;
+        return (
+          <div className="study-ex" key={i}>
+            <div className="study-ex-line">
+              <p className={`${variant}-example`}>“{ex.text}”</p>
+              <button
+                type="button"
+                className={`speak-btn speak-btn--sm${playing ? " playing" : ""}`}
+                aria-label={tx("Read aloud")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  speech.speak(spKey, ex.text, item.lang);
+                }}
+              >
+                {speech.loadingKey === spKey ? "…" : playing ? "⏸" : "🔊"}
+              </button>
+            </div>
+            {ex.local && (
+              <p className={`${variant}-example-local`}>{ex.local}</p>
+            )}
+          </div>
+        );
+      })}
     </>
   );
 }
 
 function GrammarCard({
   item,
+  speech,
   saved,
   onSave,
   onRemove,
@@ -653,6 +683,7 @@ function GrammarCard({
   cardRef,
 }: {
   item: GrammarItem;
+  speech: Speech;
   saved?: boolean;
   onSave?: () => void;
   onRemove?: () => void;
@@ -705,7 +736,12 @@ function GrammarCard({
         </div>
       </div>
       <p className="gcard-exp">{item.explanation}</p>
-      <Examples item={item} variant="gcard" />
+      <Examples
+        item={item}
+        speech={speech}
+        keyBase={`grammar:${grammarKey(item)}`}
+        variant="gcard"
+      />
     </div>
   );
 }
