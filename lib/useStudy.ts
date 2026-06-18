@@ -12,6 +12,8 @@ export interface Example {
   text: string;
   /** That same sentence translated into the reader's My Page language. */
   local?: string;
+  /** Pronunciation guide for the sentence (IPA / pinyin / romaji …). */
+  reading?: string;
 }
 
 export interface VocabItem {
@@ -25,6 +27,8 @@ export interface VocabItem {
   example?: string;
   /** @deprecated Legacy single translation — read for back-compat, no longer written. */
   exampleLocal?: string;
+  /** @deprecated Legacy single example reading — read for back-compat, no longer written. */
+  exampleReading?: string;
   /** How many times this (or a near-identical) item has come up. */
   count?: number;
   /** Last time it was seen (for tie-breaking the sort). */
@@ -45,6 +49,8 @@ export interface GrammarItem {
   example?: string;
   /** @deprecated Legacy single translation — read for back-compat, no longer written. */
   exampleLocal?: string;
+  /** @deprecated Legacy single example reading — read for back-compat, no longer written. */
+  exampleReading?: string;
   count?: number;
   at?: number;
   /** Total ms the learner has dwelt on this card while reviewing. */
@@ -132,22 +138,32 @@ const byCount = <T extends { count?: number; at?: number }>(a: T, b: T) =>
 const MAX_EXAMPLES = 6;
 
 // Normalise an item's examples into the paired form, upgrading legacy entries
-// that only had the scalar example/exampleLocal fields.
+// that only had the scalar example/exampleLocal/exampleReading fields.
 export function exampleList(item: {
   examples?: Example[];
   example?: string;
   exampleLocal?: string;
+  exampleReading?: string;
 }): Example[] {
   const out: Example[] = [];
   if (Array.isArray(item.examples)) {
     for (const e of item.examples) {
       const text = (e?.text ?? "").trim();
-      if (text) out.push({ text, local: (e?.local ?? "").trim() || undefined });
+      if (text)
+        out.push({
+          text,
+          local: (e?.local ?? "").trim() || undefined,
+          reading: (e?.reading ?? "").trim() || undefined,
+        });
     }
   }
   const legacy = (item.example ?? "").trim();
   if (legacy && !out.some((e) => similarText(e.text, legacy))) {
-    out.push({ text: legacy, local: (item.exampleLocal ?? "").trim() || undefined });
+    out.push({
+      text: legacy,
+      local: (item.exampleLocal ?? "").trim() || undefined,
+      reading: (item.exampleReading ?? "").trim() || undefined,
+    });
   }
   return out;
 }
@@ -159,8 +175,11 @@ function mergeExamples(cur: Example[], add: Example[]): Example[] {
   for (const e of add) {
     const i = out.findIndex((x) => similarText(x.text, e.text));
     if (i >= 0) {
-      // Backfill a translation onto an example we already had but couldn't pair.
-      if (!out[i].local && e.local) out[i] = { ...out[i], local: e.local };
+      // Backfill a translation/reading onto an example we already had.
+      const merged = { ...out[i] };
+      if (!merged.local && e.local) merged.local = e.local;
+      if (!merged.reading && e.reading) merged.reading = e.reading;
+      out[i] = merged;
     } else {
       out.push(e);
     }
