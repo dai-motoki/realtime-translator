@@ -101,6 +101,10 @@ export const UI_STRINGS: string[] = [
   "No grammar points in this language yet.",
   "Related words",
   "Related notes",
+  "Search words (any language)…",
+  "Search grammar (any language)…",
+  "No matches.",
+  "Clear",
 
   // ---- Log / minutes panel ----
   "Minutes",
