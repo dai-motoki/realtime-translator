@@ -1426,6 +1426,78 @@ select {
   font-weight: 600;
 }
 
+/* ---------------- My Page (language levels) ---------------- */
+.mypage-intro {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fg-dim);
+  margin-bottom: 6px;
+}
+.mypage-lang {
+  padding: 14px 0 18px;
+  border-top: 1px solid var(--line);
+}
+.mypage-lang:first-of-type {
+  border-top: none;
+}
+.mypage-lang-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.mypage-flag {
+  font-size: 22px;
+}
+.mypage-lang-name {
+  flex: 1 1 auto;
+  font-size: 16px;
+  font-weight: 700;
+}
+.mypage-overall {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent, var(--fg));
+  background: var(--accent-soft, var(--bg-elev-1));
+  border: 1px solid var(--accent, var(--line-strong));
+  border-radius: 999px;
+  padding: 2px 11px;
+}
+.mypage-counts {
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+.radar {
+  display: block;
+  margin: 6px auto 2px;
+  overflow: visible; /* let the axis labels sit outside the chart box */
+}
+.radar-grid {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.radar-spoke {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.radar-area {
+  fill: rgba(139, 84, 240, 0.28);
+  stroke: var(--accent-2, #8b54f0);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.radar-label {
+  fill: var(--fg-dim);
+  font-size: 10px;
+  font-weight: 600;
+}
+.radar-val {
+  fill: var(--fg);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 /* Smart search box above the saved lists. */
 .study-search {
   flex: 0 0 auto;
