@@ -33,6 +33,7 @@ import { SpeakerTag } from "./SpeakerTag";
 import { StudyPanel } from "./StudyPanel";
 import { LogPanel } from "./LogPanel";
 import { MyPagePanel } from "./MyPagePanel";
+import { ShareMenu } from "./ShareMenu";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { Typewriter } from "./Typewriter";
 import {
@@ -499,6 +500,7 @@ export default function Translator() {
           </span>
         </div>
         <div className="topbar-right">
+          <ShareMenu shareText="CalqTalk2 — real-time multilingual translation" />
           <LanguageSwitcher />
           <div className="seg">
             <button
