@@ -31,6 +31,7 @@ From this conversation, produce personalised study material:
    - "lang": its language code (e.g. "en", "zh")
    - "reading": a pronunciation guide (IPA for English/European languages, Hanyu Pinyin with tone marks for Chinese, Revised Romanization for Korean, standard romanization otherwise)
    - "meaning": a concise meaning written in ${langName}
+   - "mnemonic": a vivid memory hook written in ${langName} using the keyword/phonetic method — break the term's PRONUNCIATION into ${langName} sounds that form one short, vivid (even absurd) scene whose meaning connects to the term's meaning, ideally echoing the example's situation. End it with "→ <term>". Example for Chinese 日本人 (yīběnrén) = "Japanese person", learner reads Japanese: "空港で胃(イー)に弁当(ベン)が連撃(レン)される＝日本人が日の丸弁当を食べる場面 → 日本人(イーベンレン)". Omit only if no reasonable association exists.
    - "example": the example sentence from the conversation that uses it (in its own language); omit if none fits
    - "exampleLocal": that same example sentence translated into ${langName} (omit if there's no example)
    - "exampleReading": a pronunciation guide for the WHOLE example sentence, same style as "reading" (IPA for English/European, Hanyu Pinyin with tone marks for Chinese, Revised Romanization for Korean, romaji for Japanese, standard romanization otherwise); omit if there's no example
@@ -44,7 +45,7 @@ From this conversation, produce personalised study material:
    - "exampleLocal": that same example sentence translated into ${langName} (omit if there's no example)
    - "exampleReading": a pronunciation guide for the WHOLE example sentence, same style as the vocab "reading" (omit if there's no example)
 
-Return STRICT JSON: {"vocab":[{"term","lang","reading","meaning","example","exampleLocal","exampleReading"}],"grammar":[{"title","lang","explanation","example","exampleLocal","exampleReading"}]}. All explanations and meanings in ${langName}. Output JSON only, no commentary.`;
+Return STRICT JSON: {"vocab":[{"term","lang","reading","meaning","mnemonic","example","exampleLocal","exampleReading"}],"grammar":[{"title","lang","explanation","example","exampleLocal","exampleReading"}]}. All explanations and meanings in ${langName}. Output JSON only, no commentary.`;
 }
 
 export async function POST(request: NextRequest) {
@@ -150,6 +151,7 @@ function normalizeVocab(v: unknown): unknown[] {
         lang: str(o.lang),
         reading: str(o.reading),
         meaning: str(o.meaning),
+        mnemonic: str(o.mnemonic),
         example: str(o.example),
         exampleLocal: str(o.exampleLocal),
         exampleReading: str(o.exampleReading),
