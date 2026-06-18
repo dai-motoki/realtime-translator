@@ -171,6 +171,16 @@ function MinutesCard({
     <div className="logcard">
       <div className="logcard-top">
         <span className="logcard-title">{title}</span>
+        <button
+          type="button"
+          className="logcard-regen"
+          onClick={onRegenerate}
+          disabled={conv.minutesStatus === "generating"}
+          title={tx("Regenerate minutes")}
+          aria-label={tx("Regenerate minutes")}
+        >
+          {conv.minutesStatus === "generating" ? "⏳" : "🔄"}
+        </button>
         <ShareMenu
           title={minutesTitle(conv, title)}
           body={minutesText(conv, title)}
