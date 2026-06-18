@@ -107,6 +107,8 @@ export const UI_STRINGS: string[] = [
   "Clear",
   "Share",
   "Copy link",
+  "Make a memory hook",
+  "Make another memory hook",
   "My Page",
   "See your language levels",
   "Study time",
