@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { logView } from "@/lib/studyLog";
 
 /**
  * One example sentence kept together with its translation. Keeping the original
@@ -678,6 +679,7 @@ export function useStudy() {
     const next = list.slice();
     next[idx] = { ...next[idx], dwell: (next[idx].dwell ?? 0) + ms, seen: true };
     vocabStore.set(next);
+    logView(next[idx].lang, ms, "v");
   }, []);
 
   const saveGrammar = useCallback((item: GrammarItem) => {
@@ -697,6 +699,7 @@ export function useStudy() {
     const next = list.slice();
     next[idx] = { ...next[idx], dwell: (next[idx].dwell ?? 0) + ms, seen: true };
     grammarStore.set(next);
+    logView(next[idx].lang, ms, "g");
   }, []);
 
   // Whether a near-identical item is already saved (for the ＋/保存済み state).
