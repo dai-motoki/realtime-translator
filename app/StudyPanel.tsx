@@ -2,6 +2,7 @@
 
 import {
   Fragment,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -21,7 +22,7 @@ import {
   vocabKey,
   grammarKey,
   exampleList,
-  rankForLearning,
+  groupForLearning,
   type StudyLine,
   type VocabItem,
   type GrammarItem,
@@ -201,6 +202,7 @@ export function StudyPanel({
                   textOf={(v) => v.term}
                   onDwell={study.addVocabDwell}
                   emptyText={tx("No words in this language yet.")}
+                  groupLabel={tx("Related words")}
                   renderCard={(v, cardRef) => {
                     const key = vocabKey(v);
                     const hidden = review && !revealed.has(key);
@@ -243,6 +245,7 @@ export function StudyPanel({
                   textOf={(g) => g.title}
                   onDwell={study.addGrammarDwell}
                   emptyText={tx("No grammar points in this language yet.")}
+                  groupLabel={tx("Related notes")}
                   renderCard={(g, cardRef) => (
                     <GrammarCard
                       item={g}
@@ -408,6 +411,7 @@ function SavedDeck<
   textOf,
   onDwell,
   emptyText,
+  groupLabel,
   renderCard,
 }: {
   items: T[];
@@ -417,20 +421,36 @@ function SavedDeck<
   textOf: (item: T) => string;
   onDwell: (key: string, ms: number) => void;
   emptyText: string;
+  /** Heading for a "feature" card that bundles several related items. */
+  groupLabel: string;
   renderCard: (
     item: T,
     cardRef: (el: HTMLDivElement | null) => void,
   ) => ReactNode;
 }) {
-  const { deckRef, cardRef } = useDeckDwell(onDwell);
   const filtered = useMemo(
     () => items.filter((it) => langFilter === "all" || it.lang === langFilter),
     [items, langFilter],
   );
 
+  // Dwell on a feature card credits all its members (split evenly, so a group
+  // isn't over-weighted versus a single card).
+  const memberMapRef = useRef<Map<string, string[]>>(new Map());
+  const onDwellRef = useRef(onDwell);
+  useEffect(() => {
+    onDwellRef.current = onDwell;
+  });
+  const distribute = useCallback((groupKey: string, ms: number) => {
+    const members = memberMapRef.current.get(groupKey) ?? [groupKey];
+    const share = ms / members.length;
+    for (const k of members) onDwellRef.current(k, share);
+  }, []);
+  const { deckRef, cardRef } = useDeckDwell(distribute);
+
   const embVersion = useEmbeddingsVersion();
   const keySig = filtered.map(keyOf).join("|");
-  const [orderedKeys, setOrderedKeys] = useState<string[]>([]);
+  // Frozen display order: groups of item-keys (most groups are a single key).
+  const [keyGroups, setKeyGroups] = useState<string[][]>([]);
   // Keep the latest list/accessors available to the resort effect without making
   // them dependencies, so dwell ticks don't re-trigger (and reorder) the list.
   const filteredRef = useRef(filtered);
@@ -446,41 +466,86 @@ function SavedDeck<
   useEffect(() => {
     void ensureEmbeddings(filteredRef.current.map(textOfRef.current));
   }, [keySig]);
-  // Re-rank when the set/filter changes or new embeddings land.
+  // Re-rank/-group when the set/filter changes or new embeddings land.
   useEffect(() => {
-    setOrderedKeys(
-      rankForLearning(
-        filteredRef.current,
-        textOfRef.current,
-        getEmbedding,
-      ).map(keyOfRef.current),
-    );
+    const groups = groupForLearning(
+      filteredRef.current,
+      textOfRef.current,
+      getEmbedding,
+    ).map((g) => g.map(keyOfRef.current));
+    setKeyGroups(groups);
   }, [keySig, embVersion]);
 
-  const display = useMemo(() => {
+  // Resolve frozen key-groups against the current items; drop missing members,
+  // append any brand-new items as their own singleton groups.
+  const groups = useMemo(() => {
     const byKey = new Map(filtered.map((it) => [keyOf(it), it]));
-    const known = new Set(orderedKeys);
-    const inOrder = orderedKeys
-      .map((k) => byKey.get(k))
-      .filter((it): it is T => !!it);
-    const extras = filtered.filter((it) => !known.has(keyOf(it)));
-    return [...inOrder, ...extras];
+    const used = new Set<string>();
+    const out: T[][] = [];
+    for (const grp of keyGroups) {
+      const members = grp
+        .map((k) => byKey.get(k))
+        .filter((it): it is T => !!it);
+      if (members.length) {
+        out.push(members);
+        for (const m of members) used.add(keyOf(m));
+      }
+    }
+    for (const it of filtered) {
+      if (!used.has(keyOf(it))) out.push([it]);
+    }
+    return out;
     // keyOf is stable per caller; excluded to avoid needless recompute.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, orderedKeys]);
+  }, [filtered, keyGroups]);
 
-  if (display.length === 0) {
+  // Map each group's stable key → its member keys, for dwell distribution.
+  const memberMap = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const grp of groups) {
+      const keys = grp.map(keyOf);
+      m.set(groupKeyOf(keys), keys);
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups]);
+  useEffect(() => {
+    memberMapRef.current = memberMap;
+  }, [memberMap]);
+
+  if (groups.length === 0) {
     return <p className="study-empty">{emptyText}</p>;
   }
   return (
     <div className="study-deck" ref={deckRef}>
-      {display.map((it) => {
-        const key = keyOf(it);
-        return <Fragment key={key}>{renderCard(it, cardRef(key))}</Fragment>;
+      {groups.map((grp) => {
+        const gKey = groupKeyOf(grp.map(keyOf));
+        if (grp.length === 1) {
+          return (
+            <Fragment key={gKey}>{renderCard(grp[0], cardRef(gKey))}</Fragment>
+          );
+        }
+        return (
+          <div className="feature-card" key={gKey} ref={cardRef(gKey)}>
+            <div className="feature-head">
+              ✨ {groupLabel} <span className="feature-count">×{grp.length}</span>
+            </div>
+            <div className="feature-body">
+              {grp.map((m) => (
+                <Fragment key={keyOf(m)}>{renderCard(m, NOOP_REF)}</Fragment>
+              ))}
+            </div>
+          </div>
+        );
       })}
     </div>
   );
 }
+
+const NOOP_REF = () => {};
+// A stable key for a group from its (display-ordered) member keys.
+const groupKeyOf = (keys: string[]) =>
+  keys.length === 1 ? keys[0] : `feat:${keys.join("|")}`;
 
 function LearnTab({
   study,

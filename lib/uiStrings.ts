@@ -99,6 +99,8 @@ export const UI_STRINGS: string[] = [
   "Not reviewed yet",
   "No words in this language yet.",
   "No grammar points in this language yet.",
+  "Related words",
+  "Related notes",
 
   // ---- Log / minutes panel ----
   "Minutes",

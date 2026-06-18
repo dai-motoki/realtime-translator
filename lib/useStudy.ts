@@ -261,6 +261,11 @@ const RANK_SIM_MIN = 0.3; // bigram: ignore weak edges (sparse + meaningful)
 const EMB_SIM_MIN = 0.45; // embeddings sit higher; require a stronger match
 const RANK_ALPHA = 0.6; // propagation strength (0 = engagement only, →1 = all diffusion)
 const RANK_ITERS = 20; // iterations to converge the diffusion
+// Only genuinely-close cards get merged into one "feature" group, and groups
+// are capped so they stay readable.
+const RANK_CLUSTER_MIN = 0.5; // bigram clustering threshold
+const EMB_CLUSTER_MIN = 0.6; // embedding clustering threshold
+const MAX_CLUSTER = 6;
 
 const byDwell = <T extends { count?: number; at?: number; dwell?: number }>(
   a: T,
@@ -298,16 +303,28 @@ function dotUnit(a: Float32Array, b: Float32Array): number {
   return dot;
 }
 
-export function rankForLearning<
+interface LearningGraph {
+  /** Per-item diffused learning score. */
+  f: number[];
+  /** Sparse similarity edges (upper triangle). */
+  ei: number[];
+  ej: number[];
+  ew: number[];
+  /** Threshold above which two cards are "close" enough to group. */
+  clusterMin: number;
+}
+
+// Builds the similarity graph and diffuses dwell engagement over it (manifold
+// ranking / label propagation), returning per-item scores plus the edges so a
+// caller can also cluster on them.
+function learningGraph<
   T extends { count?: number; at?: number; dwell?: number; seen?: boolean },
 >(
   items: T[],
   textOf: (it: T) => string,
   embOf?: (text: string) => Float32Array | undefined,
-): T[] {
+): LearningGraph {
   const n = items.length;
-  if (n <= 2 || n > RANK_MAX) return items.slice().sort(byDwell);
-
   const texts = items.map(textOf);
   // Prefer real semantic embeddings when every card has one cached; otherwise
   // fall back to the lexical character-bigram vectors.
@@ -332,7 +349,6 @@ export function rankForLearning<
       ? dotUnit(embs[i] as Float32Array, embs[j] as Float32Array)
       : cosine(vecs![i], norms![i], vecs![j], norms![j]);
 
-  // Sparse similarity graph (upper triangle) + weighted degrees.
   const ei: number[] = [];
   const ej: number[] = [];
   const ew: number[] = [];
@@ -368,10 +384,78 @@ export function rankForLearning<
     f = nf;
   }
 
-  return items
-    .map((it, i) => ({ it, score: f[i] }))
-    .sort((a, b) => b.score - a.score || byDwell(a.it, b.it))
-    .map((x) => x.it);
+  return {
+    f,
+    ei,
+    ej,
+    ew,
+    clusterMin: useEmb ? EMB_CLUSTER_MIN : RANK_CLUSTER_MIN,
+  };
+}
+
+/**
+ * Order cards for learning AND group close ones together. Returns an ordered
+ * list of groups: most groups are a single card, but cards that are very near
+ * in vector space are merged into one "feature" group (capped at MAX_CLUSTER).
+ * Groups are ordered by their strongest member's score; members within a group
+ * are ordered the same way.
+ */
+export function groupForLearning<
+  T extends { count?: number; at?: number; dwell?: number; seen?: boolean },
+>(
+  items: T[],
+  textOf: (it: T) => string,
+  embOf?: (text: string) => Float32Array | undefined,
+): T[][] {
+  const n = items.length;
+  if (n === 0) return [];
+  if (n <= 2 || n > RANK_MAX) {
+    return items
+      .slice()
+      .sort(byDwell)
+      .map((it) => [it]);
+  }
+
+  const { f, ei, ej, ew, clusterMin } = learningGraph(items, textOf, embOf);
+
+  // Union-find clustering over the strongest edges, capped in size.
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const size = new Array<number>(n).fill(1);
+  const find = (x: number): number => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  const order = [...ew.keys()].sort((p, q) => ew[q] - ew[p]);
+  for (const e of order) {
+    if (ew[e] < clusterMin) break;
+    let a = find(ei[e]);
+    let b = find(ej[e]);
+    if (a === b || size[a] + size[b] > MAX_CLUSTER) continue;
+    if (size[a] < size[b]) [a, b] = [b, a];
+    parent[b] = a;
+    size[a] += size[b];
+  }
+
+  const byRoot = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    const arr = byRoot.get(r);
+    if (arr) arr.push(i);
+    else byRoot.set(r, [i]);
+  }
+
+  const groups = [...byRoot.values()].map((idxs) => {
+    idxs.sort((p, q) => f[q] - f[p] || byDwell(items[p], items[q]));
+    return { idxs, score: Math.max(...idxs.map((i) => f[i])) };
+  });
+  groups.sort(
+    (g1, g2) =>
+      g2.score - g1.score || byDwell(items[g1.idxs[0]], items[g2.idxs[0]]),
+  );
+  return groups.map((g) => g.idxs.map((i) => items[i]));
 }
 
 function load<T>(key: string): T[] {
