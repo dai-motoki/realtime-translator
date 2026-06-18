@@ -1495,6 +1495,28 @@ select {
   font-weight: 800;
 }
 
+/* "Regenerate minutes" icon button on each minutes card. */
+.logcard-regen {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  font-size: 15px;
+  color: var(--fg-dim);
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line);
+}
+.logcard-regen:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--line-strong);
+}
+.logcard-regen:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* Minutes detail header (title + share). */
 .log-detail-head {
   display: flex;
