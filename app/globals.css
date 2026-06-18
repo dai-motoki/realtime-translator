@@ -731,13 +731,15 @@ select {
   margin-top: 7px;
   padding-top: 7px;
   border-top: 1px solid rgba(0, 0, 0, 0.12);
-  font-size: 14.5px;
+  /* Same size & weight as the spoken line so translations read just as clearly. */
+  font-size: 16px;
+  font-weight: 600;
   line-height: 1.45;
   word-break: break-word;
 }
 .msg-trans-flag {
   flex: 0 0 auto;
-  font-size: 14px;
+  font-size: 15px;
 }
 .msg.a .msg-trans {
   border-top-color: rgba(255, 255, 255, 0.3);

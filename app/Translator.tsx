@@ -169,7 +169,8 @@ export default function Translator() {
   const [langOpen, setLangOpen] = useState(true);
 
   // Show a pronunciation guide (romaji / pinyin / IPA …) under each line.
-  const [showReading, setShowReading] = useState(true);
+  // Off by default in the conversation view; toggle it on from the footer.
+  const [showReading, setShowReading] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
