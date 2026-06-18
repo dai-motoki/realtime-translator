@@ -1220,6 +1220,10 @@ select {
 }
 /* Direct children of the deck are the one-per-screen cards (single cards or a
    bundled feature card). Nested cards inside a feature card are NOT targeted. */
+.study-deck-more {
+  flex: 0 0 auto;
+  min-height: 1px;
+}
 .study-deck > .vcard,
 .study-deck > .gcard,
 .study-deck > .feature-card {
