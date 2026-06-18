@@ -5,6 +5,9 @@ import { useT } from "@/lib/i18n";
 
 const enc = encodeURIComponent;
 
+// The canonical site URL used for sharing (overridable per-instance via `url`).
+const SITE_URL = "https://calqtalk2.com";
+
 function Svg({ path }: { path: string }) {
   return (
     <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor" aria-hidden>
@@ -171,8 +174,7 @@ export function ShareMenu({
     };
   }, [open]);
 
-  const url = () =>
-    urlProp ?? (typeof window !== "undefined" ? window.location.href : "");
+  const url = () => urlProp ?? SITE_URL;
 
   const openTarget = (t: Target) => {
     // Full content where it fits; just the title where it doesn't.
