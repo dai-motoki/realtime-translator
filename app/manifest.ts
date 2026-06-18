@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Realtime Translate",
-    short_name: "Translate",
+    name: "CalqTalk2",
+    short_name: "CalqTalk2",
     description:
       "Real-time multilingual voice translation (OpenAI gpt-realtime-translate)",
     start_url: "/",
