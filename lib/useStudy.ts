@@ -458,6 +458,49 @@ export function groupForLearning<
   return groups.map((g) => g.idxs.map((i) => items[i]));
 }
 
+const SEARCH_SEM_MIN = 0.34; // keep semantic-only hits above this cosine
+
+/**
+ * "Smart" search over saved cards: combines literal/lexical matching (substring
+ * + per-word coverage over all searchable fields, in any language) with
+ * semantic matching (cosine of the query's embedding against each card's), so a
+ * Japanese query can surface an English card by meaning, not just spelling.
+ * Returns the matches ordered by relevance.
+ */
+export function searchItems<T>(
+  items: T[],
+  query: string,
+  textOf: (it: T) => string,
+  haystackOf: (it: T) => string,
+  embOf?: (text: string) => Float32Array | undefined,
+): T[] {
+  const q = norm(query);
+  if (!q) return items.slice();
+  const tokens = q.split(" ").filter(Boolean);
+  const qEmb = embOf?.(query);
+
+  const scored: { it: T; score: number }[] = [];
+  for (const it of items) {
+    const hay = norm(haystackOf(it));
+    let lex = 0;
+    if (hay && hay.includes(q)) lex = 1;
+    else if (tokens.length) {
+      const hit = tokens.filter((t) => hay.includes(t)).length;
+      if (hit) lex = 0.75 * (hit / tokens.length);
+    }
+    let sem = 0;
+    if (qEmb) {
+      const e = embOf!(textOf(it));
+      if (e) sem = dotUnit(qEmb, e);
+    }
+    if (lex > 0 || sem >= SEARCH_SEM_MIN) {
+      scored.push({ it, score: lex + 0.7 * Math.max(sem, 0) });
+    }
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map((s) => s.it);
+}
+
 function load<T>(key: string): T[] {
   if (typeof window === "undefined") return [];
   try {

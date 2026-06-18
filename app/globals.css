@@ -1426,6 +1426,51 @@ select {
   font-weight: 600;
 }
 
+/* Smart search box above the saved lists. */
+.study-search {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.study-search-icon {
+  font-size: 13px;
+  opacity: 0.7;
+}
+.study-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+  font-size: 14px;
+}
+.study-search-input::placeholder {
+  color: var(--fg-faint);
+}
+.study-search-clear {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--fg-dim);
+  padding: 2px 4px;
+}
+/* Search results: a plain scrollable list (no one-per-screen snap). */
+.study-results {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding-bottom: 14px;
+}
+
 /* "Not reviewed yet" marker on saved word cards. */
 .study-new {
   padding: 1px 7px;

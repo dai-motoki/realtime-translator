@@ -23,6 +23,7 @@ import {
   grammarKey,
   exampleList,
   groupForLearning,
+  searchItems,
   type StudyLine,
   type VocabItem,
   type GrammarItem,
@@ -69,6 +70,9 @@ export function StudyPanel({
   // Language filters for the saved lists ("all" = no filter).
   const [vocabLang, setVocabLang] = useState("all");
   const [grammarLang, setGrammarLang] = useState("all");
+  // Smart search queries for the saved lists ("" = browse mode).
+  const [vocabQuery, setVocabQuery] = useState("");
+  const [grammarQuery, setGrammarQuery] = useState("");
 
   // The "learn" tab is hidden while Auto-collect is ON; fall back to the word
   // list so the body is never blank (derived, so no extra render).
@@ -188,12 +192,40 @@ export function StudyPanel({
                 value={vocabLang}
                 onChange={setVocabLang}
               />
+              {study.savedVocab.length > 0 && (
+                <SearchBox
+                  value={vocabQuery}
+                  onChange={setVocabQuery}
+                  placeholder={tx("Search words (any language)…")}
+                />
+              )}
               {study.savedVocab.length === 0 ? (
                 <p className="study-empty">
                   {tx(
                     "Keep talking and words will collect here automatically (when Auto-collect is ON). You can also add them by hand from “Learn from conversation”.",
                   )}
                 </p>
+              ) : vocabQuery.trim() ? (
+                <SearchResults
+                  items={study.savedVocab}
+                  langFilter={vocabLang}
+                  query={vocabQuery}
+                  keyOf={vocabKey}
+                  textOf={(v) => v.term}
+                  haystackOf={vocabHaystack}
+                  emptyText={tx("No matches.")}
+                  renderCard={(v) => {
+                    const key = vocabKey(v);
+                    return (
+                      <VocabCard
+                        item={v}
+                        speech={speech}
+                        saved
+                        onRemove={() => study.removeVocab(key)}
+                      />
+                    );
+                  }}
+                />
               ) : (
                 <SavedDeck
                   items={study.savedVocab}
@@ -231,12 +263,37 @@ export function StudyPanel({
                 value={grammarLang}
                 onChange={setGrammarLang}
               />
+              {study.savedGrammar.length > 0 && (
+                <SearchBox
+                  value={grammarQuery}
+                  onChange={setGrammarQuery}
+                  placeholder={tx("Search grammar (any language)…")}
+                />
+              )}
               {study.savedGrammar.length === 0 ? (
                 <p className="study-empty">
                   {tx(
                     "Keep talking and grammar points will collect here automatically (when Auto-collect is ON). You can also add them by hand from “Learn from conversation”.",
                   )}
                 </p>
+              ) : grammarQuery.trim() ? (
+                <SearchResults
+                  items={study.savedGrammar}
+                  langFilter={grammarLang}
+                  query={grammarQuery}
+                  keyOf={grammarKey}
+                  textOf={(g) => g.title}
+                  haystackOf={grammarHaystack}
+                  emptyText={tx("No matches.")}
+                  renderCard={(g) => (
+                    <GrammarCard
+                      item={g}
+                      speech={speech}
+                      saved
+                      onRemove={() => study.removeGrammar(grammarKey(g))}
+                    />
+                  )}
+                />
               ) : (
                 <SavedDeck
                   items={study.savedGrammar}
@@ -301,6 +358,129 @@ function LangFilter({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+// Searchable text blobs for each card type (term/reading/meaning/examples …).
+const vocabHaystack = (v: VocabItem): string =>
+  [
+    v.term,
+    v.reading,
+    v.meaning,
+    exampleList(v)
+      .map((e) => `${e.text} ${e.local ?? ""}`)
+      .join(" "),
+  ].join(" ");
+const grammarHaystack = (g: GrammarItem): string =>
+  [
+    g.title,
+    g.explanation,
+    exampleList(g)
+      .map((e) => `${e.text} ${e.local ?? ""}`)
+      .join(" "),
+  ].join(" ");
+
+// Search box for the saved lists, with a clear button.
+function SearchBox({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  const tx = useT();
+  return (
+    <div className="study-search">
+      <span className="study-search-icon" aria-hidden>
+        🔍
+      </span>
+      <input
+        type="search"
+        className="study-search-input"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete="off"
+      />
+      {value && (
+        <button
+          type="button"
+          className="study-search-clear"
+          aria-label={tx("Clear")}
+          onClick={() => onChange("")}
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Smart (lexical + semantic) search results for a saved list, ranked by
+// relevance. Results aren't dwell-tracked, so they render as a plain list.
+function SearchResults<T extends { lang: string }>({
+  items,
+  langFilter,
+  query,
+  keyOf,
+  textOf,
+  haystackOf,
+  emptyText,
+  renderCard,
+}: {
+  items: T[];
+  langFilter: string;
+  query: string;
+  keyOf: (item: T) => string;
+  textOf: (item: T) => string;
+  haystackOf: (item: T) => string;
+  emptyText: string;
+  renderCard: (item: T) => ReactNode;
+}) {
+  const filtered = useMemo(
+    () => items.filter((it) => langFilter === "all" || it.lang === langFilter),
+    [items, langFilter],
+  );
+
+  // Debounce so we don't embed/search on every keystroke.
+  const [debounced, setDebounced] = useState(query);
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(query), 200);
+    return () => window.clearTimeout(id);
+  }, [query]);
+
+  const embVersion = useEmbeddingsVersion();
+  const filteredRef = useRef(filtered);
+  const textOfRef = useRef(textOf);
+  useEffect(() => {
+    filteredRef.current = filtered;
+    textOfRef.current = textOf;
+  });
+  // Make sure the query and the cards both have embeddings for semantic search.
+  useEffect(() => {
+    const q = debounced.trim();
+    if (!q) return;
+    void ensureEmbeddings([q, ...filteredRef.current.map(textOfRef.current)]);
+  }, [debounced]);
+
+  const results = useMemo(
+    () => searchItems(filtered, debounced, textOf, haystackOf, getEmbedding),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filtered, debounced, embVersion],
+  );
+
+  if (!debounced.trim()) return null;
+  if (results.length === 0) {
+    return <p className="study-empty">{emptyText}</p>;
+  }
+  return (
+    <div className="study-results">
+      {results.map((it) => (
+        <Fragment key={keyOf(it)}>{renderCard(it)}</Fragment>
+      ))}
     </div>
   );
 }
