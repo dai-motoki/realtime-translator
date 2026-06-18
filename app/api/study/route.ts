@@ -33,6 +33,7 @@ From this conversation, produce personalised study material:
    - "meaning": a concise meaning written in ${langName}
    - "example": the example sentence from the conversation that uses it (in its own language); omit if none fits
    - "exampleLocal": that same example sentence translated into ${langName} (omit if there's no example)
+   - "exampleReading": a pronunciation guide for the WHOLE example sentence, same style as "reading" (IPA for English/European, Hanyu Pinyin with tone marks for Chinese, Revised Romanization for Korean, romaji for Japanese, standard romanization otherwise); omit if there's no example
    Pick 6–12 genuinely useful items, skipping trivial words (the, a, is …). Prefer phrases/collocations the learner would want to reuse.
 
 2. "grammar": a few (3–6) basic grammar points illustrated by the conversation's sentences. For each item give:
@@ -41,8 +42,9 @@ From this conversation, produce personalised study material:
    - "explanation": a clear, short explanation in ${langName} of how it works
    - "example": an example sentence from the conversation (in its own language)
    - "exampleLocal": that same example sentence translated into ${langName} (omit if there's no example)
+   - "exampleReading": a pronunciation guide for the WHOLE example sentence, same style as the vocab "reading" (omit if there's no example)
 
-Return STRICT JSON: {"vocab":[{"term","lang","reading","meaning","example","exampleLocal"}],"grammar":[{"title","lang","explanation","example","exampleLocal"}]}. All explanations and meanings in ${langName}. Output JSON only, no commentary.`;
+Return STRICT JSON: {"vocab":[{"term","lang","reading","meaning","example","exampleLocal","exampleReading"}],"grammar":[{"title","lang","explanation","example","exampleLocal","exampleReading"}]}. All explanations and meanings in ${langName}. Output JSON only, no commentary.`;
 }
 
 export async function POST(request: NextRequest) {
@@ -150,6 +152,7 @@ function normalizeVocab(v: unknown): unknown[] {
         meaning: str(o.meaning),
         example: str(o.example),
         exampleLocal: str(o.exampleLocal),
+        exampleReading: str(o.exampleReading),
       };
     })
     .filter((x) => x.term && x.meaning);
@@ -166,6 +169,7 @@ function normalizeGrammar(v: unknown): unknown[] {
         explanation: str(o.explanation),
         example: str(o.example),
         exampleLocal: str(o.exampleLocal),
+        exampleReading: str(o.exampleReading),
       };
     })
     .filter((x) => x.title && x.explanation);

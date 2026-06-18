@@ -933,6 +933,7 @@ function Examples({
                 {speech.loadingKey === spKey ? "…" : playing ? "⏸" : "🔊"}
               </button>
             </div>
+            {ex.reading && <p className="study-ex-reading">{ex.reading}</p>}
             {ex.local && (
               <p className={`${variant}-example-local`}>{ex.local}</p>
             )}

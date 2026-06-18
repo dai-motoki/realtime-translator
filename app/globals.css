@@ -1570,6 +1570,13 @@ select {
   flex: 1 1 auto;
   min-width: 0;
 }
+/* Pronunciation guide for an example sentence. */
+.study-ex-reading {
+  margin-top: 2px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--fg-faint);
+}
 .speak-btn--sm {
   flex: 0 0 auto;
   font-size: 12px;
