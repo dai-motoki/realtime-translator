@@ -1428,6 +1428,81 @@ select {
   font-weight: 600;
 }
 
+/* ---------------- Share menu ---------------- */
+.share {
+  position: relative;
+  display: inline-flex;
+}
+.share-trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--fg-dim);
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line);
+}
+.share-trigger.on,
+.share-trigger:hover {
+  color: var(--fg);
+  border-color: var(--line-strong);
+}
+.share-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  z-index: 60;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 248px;
+  padding: 9px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+}
+.share-pop.right {
+  right: 0;
+}
+.share-pop.left {
+  left: 0;
+}
+.share-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  color: #2b4cb3;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+.share-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.share-btn:active {
+  transform: scale(0.94);
+}
+.share-mono {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+.share-ok {
+  color: #1aa251;
+  font-weight: 800;
+}
+
+/* Minutes detail header (title + share). */
+.log-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 /* ---------------- My Page (language levels) ---------------- */
 .mypage-intro {
   font-size: 13px;

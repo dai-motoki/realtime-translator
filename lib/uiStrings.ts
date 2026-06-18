@@ -105,6 +105,8 @@ export const UI_STRINGS: string[] = [
   "Search grammar (any language)…",
   "No matches.",
   "Clear",
+  "Share",
+  "Copy link",
   "My Page",
   "See your language levels",
   "Study time",

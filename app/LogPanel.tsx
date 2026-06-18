@@ -5,6 +5,7 @@ import { getLanguage } from "@/lib/languages";
 import { useT } from "@/lib/i18n";
 import type { Conversation, useConversations } from "@/lib/useConversations";
 import { SpeakerTag } from "./SpeakerTag";
+import { ShareMenu } from "./ShareMenu";
 
 type Convos = ReturnType<typeof useConversations>;
 
@@ -15,6 +16,26 @@ const fmtDate = (ms: number) =>
     hour: "2-digit",
     minute: "2-digit",
   });
+
+// A short title to share, and the full minutes rendered as plain text to copy.
+function minutesTitle(conv: Conversation, fallback: string): string {
+  return conv.minutes?.title || fallback;
+}
+function minutesText(conv: Conversation, title: string): string {
+  const m = conv.minutes;
+  if (!m) return title;
+  const lines: string[] = [`📝 ${title}`];
+  if (m.summary) lines.push("", m.summary);
+  const section = (head: string, items?: string[]) => {
+    if (items && items.length) {
+      lines.push("", head, ...items.map((i) => `・${i}`));
+    }
+  };
+  section("Topics", m.topics);
+  section("Decisions", m.decisions);
+  section("To-dos", m.actions);
+  return lines.join("\n");
+}
 
 export function LogPanel({
   open,
@@ -150,6 +171,10 @@ function MinutesCard({
     <div className="logcard">
       <div className="logcard-top">
         <span className="logcard-title">{title}</span>
+        <ShareMenu
+          shareText={minutesTitle(conv, title)}
+          copyText={minutesText(conv, title)}
+        />
         <button
           type="button"
           className="study-remove"
@@ -214,7 +239,13 @@ function DetailView({
     tx(conv.mode === "talk" ? "Conversation record" : "Live record");
   return (
     <div className="log-detail">
-      <h3 className="log-detail-title">{title}</h3>
+      <div className="log-detail-head">
+        <h3 className="log-detail-title">{title}</h3>
+        <ShareMenu
+          shareText={minutesTitle(conv, title)}
+          copyText={minutesText(conv, title)}
+        />
+      </div>
       <div className="logcard-meta">
         <span>{fmtDate(conv.endedAt)}</span>
         <span className="logcard-flags">
