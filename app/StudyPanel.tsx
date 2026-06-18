@@ -228,6 +228,7 @@ export function StudyPanel({
                 />
               ) : (
                 <SavedDeck
+                  key={vocabLang}
                   items={study.savedVocab}
                   langFilter={vocabLang}
                   keyOf={vocabKey}
@@ -296,6 +297,7 @@ export function StudyPanel({
                 />
               ) : (
                 <SavedDeck
+                  key={grammarLang}
                   items={study.savedGrammar}
                   langFilter={grammarLang}
                   keyOf={grammarKey}
@@ -477,9 +479,11 @@ function SearchResults<T extends { lang: string }>({
   if (results.length === 0) {
     return <p className="study-empty">{emptyText}</p>;
   }
+  // Cap how many result cards render at once (keeps large libraries snappy).
+  const shown = results.slice(0, 50);
   return (
     <div className="study-results">
-      {results.map((it) => (
+      {shown.map((it) => (
         <Fragment key={keyOf(it)}>{renderCard(it)}</Fragment>
       ))}
     </div>
@@ -694,12 +698,39 @@ function SavedDeck<
     memberMapRef.current = memberMap;
   }, [memberMap]);
 
+  // Render only a growing window of cards (each is ~full-screen, so rendering
+  // hundreds at once can crash mobile browsers). Show more as you scroll near
+  // the end; reset when the set/filter changes.
+  // Reset of this window on language-filter change is handled by remounting the
+  // deck (the caller passes key={langFilter}).
+  const DECK_PAGE = 12;
+  const [limit, setLimit] = useState(DECK_PAGE);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const total = groups.length;
+  useEffect(() => {
+    if (limit >= total) return;
+    const root = deckRef.current;
+    const el = sentinelRef.current;
+    if (!root || !el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setLimit((l) => Math.min(total, l + DECK_PAGE));
+        }
+      },
+      { root, rootMargin: "600px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [limit, total, deckRef]);
+
   if (groups.length === 0) {
     return <p className="study-empty">{emptyText}</p>;
   }
+  const shown = groups.slice(0, limit);
   return (
     <div className="study-deck" ref={deckRef}>
-      {groups.map((grp) => {
+      {shown.map((grp) => {
         const gKey = groupKeyOf(grp.map(keyOf));
         if (grp.length === 1) {
           return (
@@ -719,6 +750,7 @@ function SavedDeck<
           </div>
         );
       })}
+      {limit < total && <div ref={sentinelRef} className="study-deck-more" />}
     </div>
   );
 }

@@ -278,8 +278,9 @@ function mergeGrammar(list: GrammarItem[], item: GrammarItem): GrammarItem[] {
 // build from janking the UI.
 const RANK_MAX = 4000;
 // Use the (denser) semantic-embedding graph only up to this size; above it the
-// cheaper sparse bigram graph is used instead.
-const EMB_MAX = 1500;
+// cheaper sparse bigram graph is used instead (the embedding all-pairs cost is
+// far heavier per pair, so large libraries fall back to keep the UI responsive).
+const EMB_MAX = 900;
 const RANK_SIM_MIN = 0.3; // bigram: ignore weak edges (sparse + meaningful)
 const EMB_SIM_MIN = 0.45; // embeddings sit higher; require a stronger match
 const RANK_ALPHA = 0.6; // propagation strength (0 = engagement only, →1 = all diffusion)
