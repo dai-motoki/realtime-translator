@@ -1216,8 +1216,11 @@ select {
   gap: 11px;
   padding-bottom: 14px;
 }
-.study-deck .vcard,
-.study-deck .gcard {
+/* Direct children of the deck are the one-per-screen cards (single cards or a
+   bundled feature card). Nested cards inside a feature card are NOT targeted. */
+.study-deck > .vcard,
+.study-deck > .gcard,
+.study-deck > .feature-card {
   scroll-snap-align: start;
   scroll-snap-stop: always;
   /* Fill the visible deck so only one card shows at a time. */
@@ -1225,6 +1228,46 @@ select {
   display: flex;
   flex-direction: column;
   justify-content: center;
+}
+
+/* "Feature" card: a themed bundle of semantically-close cards on one screen. */
+.feature-card {
+  padding: 12px;
+  background: var(--bg-elev-1);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  gap: 10px;
+  /* Long bundles scroll within the card rather than spilling over. */
+  overflow-y: auto;
+}
+.feature-card.feature-card {
+  /* Bundles are content-driven; don't vertically centre a tall stack. */
+  justify-content: flex-start;
+}
+.feature-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent, var(--fg));
+}
+.feature-count {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--fg-dim);
+}
+.feature-body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+/* Members inside a feature card are compact, not full-screen. */
+.feature-body .vcard,
+.feature-body .gcard {
+  min-height: 0;
+  background: var(--bg-elev-2);
 }
 .study-listhead {
   display: flex;
