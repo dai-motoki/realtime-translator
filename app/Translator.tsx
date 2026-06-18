@@ -32,6 +32,7 @@ import { useDiarization, type TimedLine } from "@/lib/useDiarization";
 import { SpeakerTag } from "./SpeakerTag";
 import { StudyPanel } from "./StudyPanel";
 import { LogPanel } from "./LogPanel";
+import { MyPagePanel } from "./MyPagePanel";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { Typewriter } from "./Typewriter";
 import {
@@ -89,6 +90,7 @@ export default function Translator() {
   // Saved conversation logs + auto-generated minutes (localStorage for now).
   const convos = useConversations();
   const [logOpen, setLogOpen] = useState(false);
+  const [myPageOpen, setMyPageOpen] = useState(false);
   // Speaker diarization (who's talking) — only active when Picovoice is set up.
   const diar = useDiarization();
   // When on, new lines are auto-filed into the 単語帳 / 文法ノート as you talk.
@@ -612,6 +614,14 @@ export default function Translator() {
             )}
           </button>
           <button
+            className="audio-toggle mypage-open"
+            onClick={() => setMyPageOpen(true)}
+            title={tx("See your language levels")}
+          >
+            <span className="audio-ico">🧑‍🎓</span>
+            {tx("My Page")}
+          </button>
+          <button
             className={`audio-toggle flip ${flipped ? "on" : ""}`}
             onClick={() => setFlipped((v) => !v)}
             aria-pressed={flipped}
@@ -658,6 +668,12 @@ export default function Translator() {
         open={logOpen}
         onClose={() => setLogOpen(false)}
         convos={convos}
+      />
+
+      <MyPagePanel
+        open={myPageOpen}
+        onClose={() => setMyPageOpen(false)}
+        study={study}
       />
     </div>
   );

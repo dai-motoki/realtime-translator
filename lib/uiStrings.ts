@@ -105,6 +105,15 @@ export const UI_STRINGS: string[] = [
   "Search grammar (any language)…",
   "No matches.",
   "Clear",
+  "My Page",
+  "See your language levels",
+  "Study time",
+  "Repetition",
+  "Examples",
+  "Mastery",
+  "Overall level",
+  "Your level in each language, estimated from how much you've studied (time spent, words, grammar, examples and review).",
+  "No study data yet. Collect some words and grammar first, then come back to see your levels.",
 
   // ---- Log / minutes panel ----
   "Minutes",
