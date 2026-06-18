@@ -172,8 +172,8 @@ function MinutesCard({
       <div className="logcard-top">
         <span className="logcard-title">{title}</span>
         <ShareMenu
-          shareText={minutesTitle(conv, title)}
-          copyText={minutesText(conv, title)}
+          title={minutesTitle(conv, title)}
+          body={minutesText(conv, title)}
         />
         <button
           type="button"
@@ -242,8 +242,8 @@ function DetailView({
       <div className="log-detail-head">
         <h3 className="log-detail-title">{title}</h3>
         <ShareMenu
-          shareText={minutesTitle(conv, title)}
-          copyText={minutesText(conv, title)}
+          title={minutesTitle(conv, title)}
+          body={minutesText(conv, title)}
         />
       </div>
       <div className="logcard-meta">

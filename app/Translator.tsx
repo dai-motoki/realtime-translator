@@ -500,7 +500,7 @@ export default function Translator() {
           </span>
         </div>
         <div className="topbar-right">
-          <ShareMenu shareText="CalqTalk2 — real-time multilingual translation" />
+          <ShareMenu title="CalqTalk2 — real-time multilingual translation" />
           <LanguageSwitcher />
           <div className="seg">
             <button
