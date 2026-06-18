@@ -368,6 +368,7 @@ const vocabHaystack = (v: VocabItem): string =>
     v.term,
     v.reading,
     v.meaning,
+    v.mnemonic ?? "",
     exampleList(v)
       .map((e) => `${e.text} ${e.local ?? ""}`)
       .join(" "),
@@ -887,6 +888,9 @@ function VocabCard({
         <p className="vcard-meaning hidden">{tx("Tap to show the meaning")}</p>
       ) : (
         <p className="vcard-meaning">{item.meaning}</p>
+      )}
+      {!hiddenMeaning && item.mnemonic && (
+        <p className="vcard-mnemonic">💡 {item.mnemonic}</p>
       )}
       {!hiddenMeaning && (
         <Examples item={item} speech={speech} keyBase={spKey} />

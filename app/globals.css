@@ -1405,6 +1405,17 @@ select {
   color: var(--fg-faint);
   font-style: italic;
 }
+/* Memory hook (mnemonic) for a word. */
+.vcard-mnemonic {
+  margin-top: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--accent-soft, rgba(139, 84, 240, 0.12));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
 /* Language filter chips above the saved Vocabulary / Grammar lists. */
 .study-langfilter {
   display: flex;

@@ -22,6 +22,8 @@ export interface VocabItem {
   lang: string;
   reading: string;
   meaning: string;
+  /** A memory hook (keyword/phonetic mnemonic) in the learner's language. */
+  mnemonic?: string;
   /** All example sentences seen for this item, each paired with its translation. */
   examples?: Example[];
   /** @deprecated Legacy single example — read for back-compat, no longer written. */
@@ -204,6 +206,7 @@ function mergeVocab(list: VocabItem[], item: VocabItem): VocabItem[] {
       // Backfill any fields the earlier copy was missing.
       reading: cur.reading || item.reading,
       meaning: cur.meaning || item.meaning,
+      mnemonic: cur.mnemonic || item.mnemonic,
       // Accumulate every example (paired with its own translation) over time.
       examples: mergeExamples(exampleList(cur), exampleList(item)),
       example: undefined,
