@@ -40,6 +40,8 @@ export interface VocabItem {
   dwell?: number;
   /** Whether the learner has actually looked at this card at least once. */
   seen?: boolean;
+  /** When the card was last reviewed (epoch ms) — drives spaced repetition. */
+  seenAt?: number;
 }
 
 export interface GrammarItem {
@@ -60,6 +62,8 @@ export interface GrammarItem {
   dwell?: number;
   /** Whether the learner has actually looked at this card at least once. */
   seen?: boolean;
+  /** When the card was last reviewed (epoch ms) — drives spaced repetition. */
+  seenAt?: number;
 }
 
 export interface StudySet {
@@ -291,10 +295,52 @@ const RANK_CLUSTER_MIN = 0.5; // bigram clustering threshold
 const EMB_CLUSTER_MIN = 0.6; // embedding clustering threshold
 const MAX_CLUSTER = 6;
 
-const byDwell = <T extends { count?: number; at?: number; dwell?: number }>(
+const DAY_MS = 86400000;
+
+/**
+ * Review priority via a forgetting curve. New/unseen cards are surfaced first;
+ * among studied cards, the ones you're most likely to have forgotten (seen a
+ * while ago, weak memory) rank above ones you just reviewed.
+ *
+ * Retrievability R = exp(-Δt / S) (Ebbinghaus), where memory strength S grows
+ * with time spent (dwell) and repetitions (count). Priority = 1 − R, so
+ * freshly-seen strong cards sink and overdue ones rise.
+ */
+function reviewPriority(it: {
+  seen?: boolean;
+  seenAt?: number;
+  at?: number;
+  dwell?: number;
+  count?: number;
+}): number {
+  const dwellSec = (it.dwell ?? 0) / 1000;
+  const everSeen = !!it.seen || dwellSec > 0;
+  if (!everSeen) return 1.2; // new / never-opened — top priority
+  const last = it.seenAt ?? it.at ?? Date.now();
+  const dtDays = Math.max(0, (Date.now() - last) / DAY_MS);
+  const strengthDays = Math.max(
+    0.2,
+    0.3 + dwellSec / 30 + 0.5 * ((it.count ?? 1) - 1),
+  );
+  return 1 - Math.exp(-dtDays / strengthDays);
+}
+
+// Order: most due first; ties → least-recently-seen (new=0) first, then frequency.
+const byReview = <
+  T extends {
+    seen?: boolean;
+    seenAt?: number;
+    at?: number;
+    dwell?: number;
+    count?: number;
+  },
+>(
   a: T,
   b: T,
-) => (b.dwell ?? 0) - (a.dwell ?? 0) || byCount(a, b);
+) =>
+  reviewPriority(b) - reviewPriority(a) ||
+  (a.seenAt ?? 0) - (b.seenAt ?? 0) ||
+  (b.count ?? 1) - (a.count ?? 1);
 
 // Bag-of-character-bigrams vector for one card's text.
 function bigramVec(s: string): Map<string, number> {
@@ -338,11 +384,17 @@ interface LearningGraph {
   clusterMin: number;
 }
 
-// Builds the similarity graph and diffuses dwell engagement over it (manifold
+// Builds the similarity graph and diffuses review priority over it (manifold
 // ranking / label propagation), returning per-item scores plus the edges so a
 // caller can also cluster on them.
 function learningGraph<
-  T extends { count?: number; at?: number; dwell?: number; seen?: boolean },
+  T extends {
+    count?: number;
+    at?: number;
+    dwell?: number;
+    seen?: boolean;
+    seenAt?: number;
+  },
 >(
   items: T[],
   textOf: (it: T) => string,
@@ -390,8 +442,8 @@ function learningGraph<
     }
   }
 
-  // Seed: log(1 + dwell seconds) — dwell time is ~log-normal.
-  const y = items.map((it) => Math.log1p((it.dwell ?? 0) / 1000));
+  // Seed: spaced-repetition review priority (new + overdue rank highest).
+  const y = items.map(reviewPriority);
 
   // Symmetric-normalised diffusion: F ← αSF + (1−α)Y.
   let f = y.slice();
@@ -425,7 +477,13 @@ function learningGraph<
  * are ordered the same way.
  */
 export function groupForLearning<
-  T extends { count?: number; at?: number; dwell?: number; seen?: boolean },
+  T extends {
+    count?: number;
+    at?: number;
+    dwell?: number;
+    seen?: boolean;
+    seenAt?: number;
+  },
 >(
   items: T[],
   textOf: (it: T) => string,
@@ -436,7 +494,7 @@ export function groupForLearning<
   if (n <= 2 || n > RANK_MAX) {
     return items
       .slice()
-      .sort(byDwell)
+      .sort(byReview)
       .map((it) => [it]);
   }
 
@@ -472,12 +530,12 @@ export function groupForLearning<
   }
 
   const groups = [...byRoot.values()].map((idxs) => {
-    idxs.sort((p, q) => f[q] - f[p] || byDwell(items[p], items[q]));
+    idxs.sort((p, q) => f[q] - f[p] || byReview(items[p], items[q]));
     return { idxs, score: Math.max(...idxs.map((i) => f[i])) };
   });
   groups.sort(
     (g1, g2) =>
-      g2.score - g1.score || byDwell(items[g1.idxs[0]], items[g2.idxs[0]]),
+      g2.score - g1.score || byReview(items[g1.idxs[0]], items[g2.idxs[0]]),
   );
   return groups.map((g) => g.idxs.map((i) => items[i]));
 }
@@ -681,9 +739,25 @@ export function useStudy() {
     const idx = list.findIndex((p) => vocabKey(p) === key);
     if (idx < 0) return;
     const next = list.slice();
-    next[idx] = { ...next[idx], dwell: (next[idx].dwell ?? 0) + ms, seen: true };
+    next[idx] = {
+      ...next[idx],
+      dwell: (next[idx].dwell ?? 0) + ms,
+      seen: true,
+      seenAt: Date.now(),
+    };
     vocabStore.set(next);
     logView(next[idx].lang, ms, "v");
+  }, []);
+
+  // Attach (or replace) a memory hook on one saved word — used by the per-card
+  // "generate mnemonic" button.
+  const setVocabMnemonic = useCallback((key: string, mnemonic: string) => {
+    const list = vocabStore.get();
+    const idx = list.findIndex((p) => vocabKey(p) === key);
+    if (idx < 0) return;
+    const next = list.slice();
+    next[idx] = { ...next[idx], mnemonic };
+    vocabStore.set(next);
   }, []);
 
   const saveGrammar = useCallback((item: GrammarItem) => {
@@ -701,7 +775,12 @@ export function useStudy() {
     const idx = list.findIndex((p) => grammarKey(p) === key);
     if (idx < 0) return;
     const next = list.slice();
-    next[idx] = { ...next[idx], dwell: (next[idx].dwell ?? 0) + ms, seen: true };
+    next[idx] = {
+      ...next[idx],
+      dwell: (next[idx].dwell ?? 0) + ms,
+      seen: true,
+      seenAt: Date.now(),
+    };
     grammarStore.set(next);
     logView(next[idx].lang, ms, "g");
   }, []);
@@ -734,6 +813,7 @@ export function useStudy() {
     saveVocab,
     removeVocab,
     addVocabDwell,
+    setVocabMnemonic,
     saveGrammar,
     removeGrammar,
     addGrammarDwell,

@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { getLanguage, LANGUAGES } from "@/lib/languages";
@@ -61,6 +62,32 @@ export function StudyPanel({
   onToggleAuto: () => void;
 }) {
   const tx = useT();
+  const uiLang = useUiLang();
+  // Generate a memory hook for one word on demand (per-card button).
+  const generateMnemonic = useCallback(
+    async (item: VocabItem) => {
+      try {
+        const res = await fetch("/api/mnemonic", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            term: item.term,
+            reading: item.reading,
+            meaning: item.meaning,
+            example: exampleList(item)[0]?.text,
+            lang: uiLang,
+          }),
+        });
+        const data = (await res.json().catch(() => null)) as {
+          mnemonic?: string;
+        } | null;
+        if (data?.mnemonic) study.setVocabMnemonic(vocabKey(item), data.mnemonic);
+      } catch {
+        // network error — leave the card as-is
+      }
+    },
+    [study, uiLang],
+  );
   // Default to the saved word list when Auto-collect is ON (the manual "learn"
   // tab is hidden in that case).
   const [tab, setTab] = useState<Tab>(auto ? "vocab" : "learn");
@@ -222,6 +249,7 @@ export function StudyPanel({
                         speech={speech}
                         saved
                         onRemove={() => study.removeVocab(key)}
+                        onMnemonic={() => generateMnemonic(v)}
                       />
                     );
                   }}
@@ -248,6 +276,7 @@ export function StudyPanel({
                         saved
                         showStatus
                         onRemove={() => study.removeVocab(key)}
+                        onMnemonic={() => generateMnemonic(v)}
                         cardRef={cardRef}
                       />
                     );
@@ -839,6 +868,7 @@ function VocabCard({
   hiddenMeaning,
   onToggle,
   showStatus,
+  onMnemonic,
   cardRef,
 }: {
   item: VocabItem;
@@ -850,12 +880,25 @@ function VocabCard({
   onToggle?: () => void;
   /** Show the "not reviewed yet" marker (saved list only). */
   showStatus?: boolean;
+  /** When provided, shows a button to generate/regenerate a memory hook. */
+  onMnemonic?: () => Promise<void> | void;
   cardRef?: (el: HTMLDivElement | null) => void;
 }) {
   const tx = useT();
   const flag = getLanguage(item.lang).flag;
   const spKey = `vocab:${vocabKey(item)}`;
   const playing = speech.playingKey === spKey;
+  const [mnBusy, setMnBusy] = useState(false);
+  const runMnemonic = async (e: ReactMouseEvent) => {
+    e.stopPropagation();
+    if (mnBusy || !onMnemonic) return;
+    setMnBusy(true);
+    try {
+      await onMnemonic();
+    } finally {
+      setMnBusy(false);
+    }
+  };
   return (
     <div className="vcard" onClick={onToggle} ref={cardRef}>
       <div className="vcard-top">
@@ -922,7 +965,30 @@ function VocabCard({
         <p className="vcard-meaning">{item.meaning}</p>
       )}
       {!hiddenMeaning && item.mnemonic && (
-        <p className="vcard-mnemonic">💡 {item.mnemonic}</p>
+        <p className="vcard-mnemonic">
+          💡 {item.mnemonic}
+          {onMnemonic && (
+            <button
+              type="button"
+              className="vcard-mn-regen"
+              onClick={runMnemonic}
+              disabled={mnBusy}
+              title={tx("Make another memory hook")}
+            >
+              {mnBusy ? "…" : "↻"}
+            </button>
+          )}
+        </p>
+      )}
+      {!hiddenMeaning && !item.mnemonic && onMnemonic && (
+        <button
+          type="button"
+          className="vcard-mn-gen"
+          onClick={runMnemonic}
+          disabled={mnBusy}
+        >
+          {mnBusy ? `✨ ${tx("Generating…")}` : `💡 ${tx("Make a memory hook")}`}
+        </button>
       )}
       {!hiddenMeaning && (
         <Examples item={item} speech={speech} keyBase={spKey} />
