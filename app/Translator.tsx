@@ -495,7 +495,7 @@ export default function Translator() {
           <span className="brand-name">
             {optimizing
               ? `✨ ${tx("Optimizing the latest conversation…")}`
-              : "AI Realtime Translate.COM"}
+              : "CalqTalk2"}
           </span>
         </div>
         <div className="topbar-right">
