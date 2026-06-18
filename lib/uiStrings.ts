@@ -112,6 +112,10 @@ export const UI_STRINGS: string[] = [
   "Examples",
   "Mastery",
   "Overall level",
+  "min this week",
+  "Last studied",
+  "today",
+  "{n}d ago",
   "Your level in each language, estimated from how much you've studied (time spent, words, grammar, examples and review).",
   "No study data yet. Collect some words and grammar first, then come back to see your levels.",
 

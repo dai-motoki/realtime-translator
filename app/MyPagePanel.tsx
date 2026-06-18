@@ -9,8 +9,123 @@ import {
   type VocabItem,
   type GrammarItem,
 } from "@/lib/useStudy";
+import { useStudyLog, type ViewEvent } from "@/lib/studyLog";
 
 type Study = ReturnType<typeof useStudy>;
+
+const DAY = 86400000;
+const TREND_DAYS = 14;
+
+const startOfDay = (t: number): number => {
+  const d = new Date(t);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+};
+
+interface Trend {
+  /** Study seconds per day, oldest → today (length TREND_DAYS). */
+  daily: number[];
+  /** Minutes studied in the last 7 days. */
+  weekMin: number;
+  /** Growth vs the previous 7 days, as a percentage (null when no baseline). */
+  growthPct: number | null;
+  /** Days since the language was last studied (null when never). */
+  lastDays: number | null;
+}
+
+function trendFor(lang: string, events: ViewEvent[]): Trend {
+  const today = startOfDay(Date.now());
+  const daily = new Array<number>(TREND_DAYS).fill(0);
+  let last = 0;
+  for (const ev of events) {
+    if (ev.lang !== lang) continue;
+    if (ev.t > last) last = ev.t;
+    const diff = Math.round((today - startOfDay(ev.t)) / DAY);
+    if (diff >= 0 && diff < TREND_DAYS) daily[TREND_DAYS - 1 - diff] += ev.ms / 1000;
+  }
+  const recent7 = daily.slice(TREND_DAYS - 7).reduce((s, x) => s + x, 0);
+  const prev7 = daily.slice(0, TREND_DAYS - 7).reduce((s, x) => s + x, 0);
+  const growthPct =
+    prev7 > 0
+      ? Math.round(((recent7 - prev7) / prev7) * 100)
+      : recent7 > 0
+        ? 100
+        : null;
+  return {
+    daily,
+    weekMin: Math.round(recent7 / 60),
+    growthPct,
+    lastDays: last ? Math.floor((Date.now() - last) / DAY) : null,
+  };
+}
+
+function Sparkline({ data }: { data: number[] }) {
+  const w = 150;
+  const h = 30;
+  const max = Math.max(1, ...data);
+  const bw = w / data.length;
+  return (
+    <svg
+      className="mypage-spark"
+      viewBox={`0 0 ${w} ${h}`}
+      width={w}
+      height={h}
+      aria-hidden
+    >
+      {data.map((v, i) => {
+        const bh = Math.max(v > 0 ? 2 : 0, (v / max) * (h - 2));
+        return (
+          <rect
+            key={i}
+            className="mypage-spark-bar"
+            x={i * bw + 1}
+            y={h - bh}
+            width={bw - 2}
+            height={bh}
+            rx={1}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+// Recent-activity row under a language's radar: a 14-day sparkline, minutes this
+// week (with growth vs last week) and how long since you last studied it.
+function TrendRow({ lang, log }: { lang: string; log: ViewEvent[] }) {
+  const tx = useT();
+  const trend = useMemo(() => trendFor(lang, log), [lang, log]);
+  if (trend.weekMin === 0 && trend.lastDays === null) return null;
+
+  const growth = trend.growthPct;
+  const growthStr =
+    growth === null ? "" : `${growth >= 0 ? "▲" : "▼"}${Math.abs(growth)}%`;
+  const last =
+    trend.lastDays === null
+      ? "—"
+      : trend.lastDays <= 0
+        ? tx("today")
+        : tx("{n}d ago").replace("{n}", String(trend.lastDays));
+
+  return (
+    <div className="mypage-trend">
+      <Sparkline data={trend.daily} />
+      <div className="mypage-trend-meta">
+        <span>
+          📈 {trend.weekMin} {tx("min this week")}{" "}
+          {growthStr && (
+            <span className={growth! >= 0 ? "trend-up" : "trend-down"}>
+              {growthStr}
+            </span>
+          )}
+        </span>
+        <span className="mypage-last">
+          🕒 {tx("Last studied")}: {last}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 // The six radar axes. Each raw value is mapped to a 0–100 level on a log scale
 // against a heuristic "advanced learner" target, so the shape reflects an
@@ -177,6 +292,7 @@ export function MyPagePanel({
   study: Study;
 }) {
   const tx = useT();
+  const log = useStudyLog();
 
   useEffect(() => {
     if (!open) return;
@@ -260,6 +376,7 @@ export function MyPagePanel({
                   <div className="mypage-counts">
                     {s.words} {tx("words")} · {s.grammars} {tx("Grammar")}
                   </div>
+                  <TrendRow lang={s.lang} log={log} />
                 </section>
               );
             })
