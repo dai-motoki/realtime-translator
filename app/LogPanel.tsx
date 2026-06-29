@@ -37,6 +37,120 @@ function minutesText(conv: Conversation, title: string): string {
   return lines.join("\n");
 }
 
+/**
+ * The minutes UI itself (header + list/detail body), independent of how it's
+ * framed. The mobile `LogPanel` wraps this in a bottom-sheet modal; the desktop
+ * `MinutesDock` wraps it in an always-on right-hand column. `onClose` is only
+ * passed by the modal — the dock has nowhere to close to.
+ */
+function MinutesView({
+  convos,
+  onClose,
+}: {
+  convos: Convos;
+  onClose?: () => void;
+}) {
+  const tx = useT();
+  // When set, we're viewing one conversation's full chat history.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const list = convos.conversations;
+  const selected = selectedId
+    ? list.find((c) => c.id === selectedId) ?? null
+    : null;
+
+  // Escape steps back out of a detail view first, then closes (modal only —
+  // for the dock there's nothing to close, so it just deselects).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (selectedId) setSelectedId(null);
+      else onClose?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, selectedId]);
+
+  return (
+    <>
+      <header className="study-head">
+        <h2 className="study-title">
+          {selected ? (
+            <>
+              <button
+                className="log-back"
+                onClick={() => setSelectedId(null)}
+                aria-label={tx("Back to list")}
+              >
+                ‹
+              </button>
+              💬 {tx("Conversation log")}
+            </>
+          ) : (
+            `📝 ${tx("Minutes")}`
+          )}
+        </h2>
+        <div className="study-head-right">
+          {!selected && list.length > 0 && (
+            <button
+              className="study-auto"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    tx("Delete all saved minutes and conversation logs?"),
+                  )
+                ) {
+                  convos.clearAll();
+                }
+              }}
+              title={tx("Delete everything")}
+            >
+              {tx("Clear all")}
+            </button>
+          )}
+          {onClose && (
+            <button
+              className="study-close"
+              onClick={onClose}
+              aria-label={tx("Close")}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </header>
+
+      <div className="study-body">
+        {selected ? (
+          <DetailView
+            conv={selected}
+            onRegenerate={() => convos.generateMinutes(selected.id)}
+          />
+        ) : list.length === 0 ? (
+          <p className="study-empty">
+            {tx(
+              "No minutes yet. When you end a conversation it’s saved automatically and its minutes are generated.",
+            )}
+          </p>
+        ) : (
+          <div className="study-list">
+            {list.map((c) => (
+              <MinutesCard
+                key={c.id}
+                conv={c}
+                onOpen={() => setSelectedId(c.id)}
+                onRegenerate={() => convos.generateMinutes(c.id)}
+                onRemove={() => convos.remove(c.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** Mobile: minutes as a bottom-sheet modal opened from the 📝 button. */
 export function LogPanel({
   open,
   onClose,
@@ -46,106 +160,28 @@ export function LogPanel({
   onClose: () => void;
   convos: Convos;
 }) {
-  const tx = useT();
-  // When set, we're viewing one conversation's full chat history.
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  // Close on Escape (or step back out of a detail view first).
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (selectedId) setSelectedId(null);
-      else onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose, selectedId]);
-
   if (!open) return null;
-
-  const list = convos.conversations;
-  const selected = selectedId
-    ? list.find((c) => c.id === selectedId) ?? null
-    : null;
 
   return (
     <div className="study-overlay" role="dialog" aria-modal="true">
       <div className="study-backdrop" onClick={onClose} />
       <div className="study-sheet">
-        <header className="study-head">
-          <h2 className="study-title">
-            {selected ? (
-              <>
-                <button
-                  className="log-back"
-                  onClick={() => setSelectedId(null)}
-                  aria-label={tx("Back to list")}
-                >
-                  ‹
-                </button>
-                💬 {tx("Conversation log")}
-              </>
-            ) : (
-              `📝 ${tx("Minutes")}`
-            )}
-          </h2>
-          <div className="study-head-right">
-            {!selected && list.length > 0 && (
-              <button
-                className="study-auto"
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      tx("Delete all saved minutes and conversation logs?"),
-                    )
-                  ) {
-                    convos.clearAll();
-                  }
-                }}
-                title={tx("Delete everything")}
-              >
-                {tx("Clear all")}
-              </button>
-            )}
-            <button
-              className="study-close"
-              onClick={onClose}
-              aria-label={tx("Close")}
-            >
-              ✕
-            </button>
-          </div>
-        </header>
-
-        <div className="study-body">
-          {selected ? (
-            <DetailView
-              conv={selected}
-              onRegenerate={() => convos.generateMinutes(selected.id)}
-            />
-          ) : list.length === 0 ? (
-            <p className="study-empty">
-              {tx(
-                "No minutes yet. When you end a conversation it’s saved automatically and its minutes are generated.",
-              )}
-            </p>
-          ) : (
-            <div className="study-list">
-              {list.map((c) => (
-                <MinutesCard
-                  key={c.id}
-                  conv={c}
-                  onOpen={() => setSelectedId(c.id)}
-                  onRegenerate={() => convos.generateMinutes(c.id)}
-                  onRemove={() => convos.remove(c.id)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        <MinutesView convos={convos} onClose={onClose} />
       </div>
     </div>
+  );
+}
+
+/**
+ * Desktop: minutes docked permanently to the right of the conversation
+ * (左会話・右議事録). Hidden on narrow screens via CSS, where `LogPanel` is used
+ * instead.
+ */
+export function MinutesDock({ convos }: { convos: Convos }) {
+  return (
+    <aside className="minutes-dock" aria-label="Minutes">
+      <MinutesView convos={convos} />
+    </aside>
   );
 }
 

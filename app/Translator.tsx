@@ -31,7 +31,7 @@ import {
 import { useDiarization, type TimedLine } from "@/lib/useDiarization";
 import { SpeakerTag } from "./SpeakerTag";
 import { StudyPanel } from "./StudyPanel";
-import { LogPanel } from "./LogPanel";
+import { LogPanel, MinutesDock } from "./LogPanel";
 import { MyPagePanel } from "./MyPagePanel";
 import { ShareMenu } from "./ShareMenu";
 import { LanguageSwitcher } from "./LanguageSwitcher";
@@ -490,6 +490,7 @@ export default function Translator() {
     <div className={`app${flipped ? " flipped" : ""}`}>
       <audio ref={audioRef} autoPlay playsInline />
 
+      <div className="app-col">
       <header className="topbar">
         <div className="brand">
           <span className="brand-dot" data-status={t.status} />
@@ -656,6 +657,10 @@ export default function Translator() {
           </button>
         </div>
       </footer>
+      </div>
+
+      {/* Desktop only (左会話・右議事録): minutes docked beside the conversation. */}
+      <MinutesDock convos={convos} />
 
       <StudyPanel
         open={studyOpen}
