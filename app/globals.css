@@ -72,6 +72,22 @@ select {
   transform: rotate(180deg);
 }
 
+/* The conversation column (topbar → transcript → controls). On phones it's the
+   whole app; on desktop it shares the row with the docked minutes panel. */
+.app-col {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Minutes dock — only shown on wide screens (see the desktop media query
+   below). On phones the minutes live in the 📝 bottom-sheet modal instead. */
+.minutes-dock {
+  display: none;
+}
+
 /* ---------------- Top bar ---------------- */
 
 .topbar {
@@ -1926,6 +1942,55 @@ select {
 }
 .live-line .speaker-tag {
   margin-bottom: 2px;
+}
+
+/* ---------------- Desktop: 左会話・右議事録 ---------------- */
+/* On wide screens the single mobile column becomes two: the conversation on the
+   left, the live 議事録 (minutes) docked on the right. The conversation content
+   is centred to a comfortable reading width so it doesn't sprawl. */
+@media (min-width: 900px) {
+  .app {
+    flex-direction: row;
+  }
+  .app-col {
+    border-right: 1px solid var(--line);
+  }
+
+  .minutes-dock {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 clamp(340px, 30vw, 460px);
+    min-height: 0;
+    background: rgba(10, 10, 15, 0.4);
+  }
+  /* Reuse the modal's head/body styling for the docked panel; it just needs to
+     fill the column and let the body scroll independently. */
+  .minutes-dock .study-head {
+    padding-top: calc(var(--safe-top) + 16px);
+    border-bottom: 1px solid var(--line);
+  }
+  .minutes-dock .study-body {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* The 📝 minutes button is redundant once the dock is always visible. */
+  .controls .log-open {
+    display: none;
+  }
+
+  /* Keep the conversation readable on a wide column by centring its content. */
+  .chat,
+  .live-feed,
+  .bubbles,
+  .langchips,
+  .langbar,
+  .options,
+  .live-controls {
+    max-width: 820px;
+    margin-inline: auto;
+    width: 100%;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
