@@ -13,10 +13,8 @@ export const UI_STRINGS: string[] = [
   // and the big centered empty state — so switching language changes the
   // on-screen text here first.
   "Optimizing the language…",
-  "Single-language conversation",
-  "Auto-translate across selected languages",
-  "Press “Start conversation” to listen in the language you picked. Add more languages any time to translate between them.",
-  "Press “Start conversation” and speak in any selected language. We detect the spoken language automatically and translate it into the others.",
+  "Auto-translate into every language",
+  "Press “Start conversation” and just speak in any of the languages you picked. We detect the spoken language automatically and translate it into all the others, shown as a chat.",
   "Live translation",
   "Speak — we translate what we hear in real time.",
   "Pick an output language and press “Start translating”. For talks, videos and more, we translate the audio you hear as subtitles.",

@@ -568,10 +568,6 @@ select {
   -webkit-overflow-scrolling: touch;
 }
 
-.center-start {
-  display: none;
-}
-
 .empty {
   height: 100%;
   display: flex;
@@ -1010,12 +1006,6 @@ select {
   gap: 8px 10px;
   margin-bottom: 12px;
 }
-.insight-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-}
 .audio-toggle {
   display: inline-flex;
   align-items: center;
@@ -1051,62 +1041,6 @@ select {
 }
 .audio-toggle:active {
   transform: scale(0.96);
-}
-
-@media (max-width: 430px) {
-  .insight-actions {
-    flex-wrap: wrap;
-  }
-}
-
-@media (min-width: 900px) and (min-height: 620px) {
-  .transcript {
-    padding: 20px 24px 170px;
-  }
-
-  .empty {
-    transform: translateY(-92px);
-  }
-
-  .center-start {
-    position: absolute;
-    inset: 0;
-    z-index: 20;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transform: translateY(42px);
-    pointer-events: none;
-  }
-
-  .center-start .record {
-    flex: 0 0 auto;
-    min-width: min(380px, 48vw);
-    max-width: 440px;
-    padding: 20px 32px;
-    pointer-events: auto;
-  }
-
-  .controls {
-    padding: 12px 24px calc(var(--safe-bottom) + 16px);
-    background: rgba(10, 10, 15, 0.76);
-    backdrop-filter: saturate(180%) blur(18px);
-    -webkit-backdrop-filter: saturate(180%) blur(18px);
-  }
-
-  .controls .live-controls {
-    display: none;
-  }
-
-  .options {
-    justify-content: center;
-    margin-bottom: 0;
-  }
-
-  .options .ghost,
-  .options .ghost ~ .ghost {
-    margin-left: 0;
-  }
 }
 
 .subcontrols {
@@ -1847,12 +1781,6 @@ select {
 }
 
 /* ---------------- Conversation log + minutes ---------------- */
-.log-workspace {
-  display: block;
-}
-.log-study-side {
-  display: none;
-}
 .logcard {
   padding: 12px 13px;
   background: var(--bg-elev-2);
@@ -1938,116 +1866,6 @@ select {
   line-height: 1.55;
 }
 
-@media (min-width: 900px) {
-  .log-sheet {
-    width: min(1120px, calc(100vw - 56px));
-    max-width: none;
-    height: min(88vh, 820px);
-    border-radius: 20px;
-    margin-bottom: max(18px, var(--safe-bottom));
-  }
-
-  .log-body {
-    overflow: hidden;
-  }
-
-  .log-workspace {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
-    gap: 16px;
-    height: 100%;
-    min-height: 0;
-  }
-
-  .log-main-col,
-  .log-study-side {
-    min-height: 0;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .log-study-side {
-    display: flex;
-    flex-direction: column;
-    gap: 13px;
-    padding-left: 16px;
-    border-left: 1px solid var(--line);
-  }
-
-  .log-study-head {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-  }
-
-  .log-study-head h3 {
-    font-size: 16px;
-    font-weight: 750;
-  }
-
-  .log-study-head span {
-    max-width: 150px;
-    text-align: right;
-    font-size: 11.5px;
-    line-height: 1.45;
-    color: var(--fg-dim);
-  }
-
-  .log-study-section {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .log-study-section h4 {
-    font-size: 12px;
-    font-weight: 750;
-    color: var(--fg-dim);
-    letter-spacing: 0.2px;
-  }
-
-  .log-study-list {
-    display: flex;
-    flex-direction: column;
-    gap: 9px;
-  }
-
-  .log-study-item {
-    padding: 10px 11px;
-    background: var(--bg-elev-2);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-  }
-
-  .log-study-item-top {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-  }
-
-  .log-study-item strong {
-    min-width: 0;
-    font-size: 13.5px;
-    line-height: 1.35;
-    word-break: break-word;
-  }
-
-  .log-study-item p {
-    margin-top: 5px;
-    font-size: 12.5px;
-    line-height: 1.5;
-    color: var(--fg-dim);
-    word-break: break-word;
-  }
-
-  .log-study-reading.log-study-reading {
-    color: var(--accent);
-    font-style: italic;
-  }
-}
-
 /* Open the full chat history for one saved conversation */
 .log-open-chat {
   margin-top: 11px;
@@ -2114,5 +1932,101 @@ select {
   * {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* ============================================================
+   Responsive shell: phone = single column (bottom-sheet panels),
+   desktop = conversation on the left + docked 議事録 / 学習 column.
+   ============================================================ */
+
+.workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.main-col {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The docked side column only exists in the desktop layout. */
+.desk-side {
+  display: none;
+}
+
+/* ---- Docked panel: render a study/log panel inline (no overlay) ---- */
+.study-overlay.docked {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+.study-overlay.docked .study-backdrop {
+  display: none;
+}
+.study-overlay.docked .study-close {
+  display: none;
+}
+.study-overlay.docked .study-sheet {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+  height: auto;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+  padding-bottom: 0;
+}
+
+/* ---- Desktop (PC) layout ---- */
+@media (min-width: 1024px) {
+  .workspace {
+    flex-direction: row;
+    align-items: stretch;
+  }
+  .main-col {
+    flex: 1 1 0;
+    min-width: 0;
+    border-right: 1px solid var(--line);
+  }
+
+  /* "会話を開始" sits centered rather than as a full-width bar. */
+  .main-col .live-controls {
+    justify-content: center;
+  }
+  .main-col .record {
+    flex: 0 0 auto;
+    min-width: 300px;
+    max-width: 460px;
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+
+  /* 議事録 + 学習, docked side by side in the right-hand column. */
+  .desk-side {
+    display: flex;
+    flex: 0 0 clamp(600px, 46vw, 820px);
+    min-width: 0;
+    min-height: 0;
+  }
+  .desk-panels {
+    flex: 1 1 auto;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+  }
+  .desk-panels > .study-overlay.docked + .study-overlay.docked {
+    border-left: 1px solid var(--line);
   }
 }

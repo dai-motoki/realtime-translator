@@ -1,19 +1,13 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { getLanguage } from "@/lib/languages";
 import { useT } from "@/lib/i18n";
 import type { Conversation, useConversations } from "@/lib/useConversations";
-import type {
-  GrammarItem,
-  useStudy,
-  VocabItem,
-} from "@/lib/useStudy";
 import { SpeakerTag } from "./SpeakerTag";
 import { ShareMenu } from "./ShareMenu";
 
 type Convos = ReturnType<typeof useConversations>;
-type Study = ReturnType<typeof useStudy>;
 
 const fmtDate = (ms: number) =>
   new Date(ms).toLocaleString(undefined, {
@@ -47,30 +41,32 @@ export function LogPanel({
   open,
   onClose,
   convos,
-  study,
+  docked = false,
 }: {
   open: boolean;
   onClose: () => void;
   convos: Convos;
-  study: Study;
+  // When docked (desktop side column) the panel is always shown inline instead
+  // of as a bottom-sheet modal — no backdrop, no close button, no Escape-close.
+  docked?: boolean;
 }) {
   const tx = useT();
   // When set, we're viewing one conversation's full chat history.
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Close on Escape (or step back out of a detail view first).
+  // Escape steps back out of a detail view, then closes (modal only).
   useEffect(() => {
-    if (!open) return;
+    if (!open && !docked) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (selectedId) setSelectedId(null);
-      else onClose();
+      else if (!docked) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose, selectedId]);
+  }, [open, onClose, selectedId, docked]);
 
-  if (!open) return null;
+  if (!open && !docked) return null;
 
   const list = convos.conversations;
   const selected = selectedId
@@ -78,9 +74,13 @@ export function LogPanel({
     : null;
 
   return (
-    <div className="study-overlay" role="dialog" aria-modal="true">
+    <div
+      className={`study-overlay${docked ? " docked" : ""}`}
+      role={docked ? undefined : "dialog"}
+      aria-modal={docked ? undefined : "true"}
+    >
       <div className="study-backdrop" onClick={onClose} />
-      <div className="study-sheet log-sheet">
+      <div className="study-sheet">
         <header className="study-head">
           <h2 className="study-title">
             {selected ? (
@@ -126,120 +126,34 @@ export function LogPanel({
           </div>
         </header>
 
-        <div className="study-body log-body">
-          <div className="log-workspace">
-            <div className="log-main-col">
-              {selected ? (
-                <DetailView
-                  conv={selected}
-                  onRegenerate={() => convos.generateMinutes(selected.id)}
-                />
-              ) : list.length === 0 ? (
-                <p className="study-empty">
-                  {tx(
-                    "No minutes yet. When you end a conversation it’s saved automatically and its minutes are generated.",
-                  )}
-                </p>
-              ) : (
-                <div className="study-list">
-                  {list.map((c) => (
-                    <MinutesCard
-                      key={c.id}
-                      conv={c}
-                      onOpen={() => setSelectedId(c.id)}
-                      onRegenerate={() => convos.generateMinutes(c.id)}
-                      onRemove={() => convos.remove(c.id)}
-                    />
-                  ))}
-                </div>
+        <div className="study-body">
+          {selected ? (
+            <DetailView
+              conv={selected}
+              onRegenerate={() => convos.generateMinutes(selected.id)}
+            />
+          ) : list.length === 0 ? (
+            <p className="study-empty">
+              {tx(
+                "No minutes yet. When you end a conversation it’s saved automatically and its minutes are generated.",
               )}
+            </p>
+          ) : (
+            <div className="study-list">
+              {list.map((c) => (
+                <MinutesCard
+                  key={c.id}
+                  conv={c}
+                  onOpen={() => setSelectedId(c.id)}
+                  onRegenerate={() => convos.generateMinutes(c.id)}
+                  onRemove={() => convos.remove(c.id)}
+                />
+              ))}
             </div>
-            <StudyAside study={study} />
-          </div>
+          )}
         </div>
       </div>
     </div>
-  );
-}
-
-function StudyAside({ study }: { study: Study }) {
-  const tx = useT();
-  const vocab = study.savedVocab.slice(0, 5);
-  const grammar = study.savedGrammar.slice(0, 4);
-  return (
-    <aside className="log-study-side" aria-label={tx("Study")}>
-      <div className="log-study-head">
-        <h3>📚 {tx("Study")}</h3>
-        <span>
-          {study.savedVocab.length} {tx("words")} /{" "}
-          {study.savedGrammar.length} {tx("Grammar notes")}
-        </span>
-      </div>
-
-      {vocab.length === 0 && grammar.length === 0 ? (
-        <p className="study-empty">
-          {tx(
-            "Keep talking and words will collect here automatically (when Auto-collect is ON). You can also add them by hand from “Learn from conversation”.",
-          )}
-        </p>
-      ) : (
-        <>
-          <StudyAsideSection title={tx("Vocabulary")}>
-            {vocab.map((item) => (
-              <StudyAsideVocab key={`${item.lang}:${item.term}`} item={item} />
-            ))}
-          </StudyAsideSection>
-          <StudyAsideSection title={tx("Grammar notes")}>
-            {grammar.map((item) => (
-              <StudyAsideGrammar
-                key={`${item.lang}:${item.title}`}
-                item={item}
-              />
-            ))}
-          </StudyAsideSection>
-        </>
-      )}
-    </aside>
-  );
-}
-
-function StudyAsideSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="log-study-section">
-      <h4>{title}</h4>
-      <div className="log-study-list">{children}</div>
-    </section>
-  );
-}
-
-function StudyAsideVocab({ item }: { item: VocabItem }) {
-  return (
-    <article className="log-study-item">
-      <div className="log-study-item-top">
-        <span>{getLanguage(item.lang).flag}</span>
-        <strong>{item.term}</strong>
-      </div>
-      {item.reading && <p className="log-study-reading">{item.reading}</p>}
-      <p>{item.meaning}</p>
-    </article>
-  );
-}
-
-function StudyAsideGrammar({ item }: { item: GrammarItem }) {
-  return (
-    <article className="log-study-item">
-      <div className="log-study-item-top">
-        <span>{getLanguage(item.lang).flag}</span>
-        <strong>{item.title}</strong>
-      </div>
-      <p>{item.explanation}</p>
-    </article>
   );
 }
 

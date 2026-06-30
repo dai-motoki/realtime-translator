@@ -71,12 +71,30 @@ function baseLangSnapshot(): string | null {
 }
 
 const noopSubscribe = () => () => {};
+// Docked (desktop) panels are always open, so their close handler is a no-op.
+const noop = () => {};
+
+// Desktop vs. phone layout. On a wide screen we dock the 議事録 (minutes) and
+// 学習 (study) panels side-by-side in a right-hand column and center the
+// "会話を開始" button, instead of the phone's bottom sheets. Exposed through
+// useSyncExternalStore so it stays SSR-safe (server snapshot = phone layout)
+// and tracks viewport resizes live.
+const DESKTOP_QUERY = "(min-width: 1024px)";
+function subscribeDesktop(cb: () => void) {
+  if (typeof window === "undefined" || !window.matchMedia) return () => {};
+  const mq = window.matchMedia(DESKTOP_QUERY);
+  mq.addEventListener("change", cb);
+  return () => mq.removeEventListener("change", cb);
+}
+function desktopSnapshot(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia(DESKTOP_QUERY).matches;
+}
 
 // Conversation chips and the live target only offer languages the realtime
 // model can actually speak. The full 210+ language list lives in the header
 // "My Page language" switcher, not here.
 const REALTIME_LANGUAGES = LANGUAGES.filter((l) => l.realtime);
-const APP_NAME = "AI Realtime Translate";
 
 export default function Translator() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -123,9 +141,8 @@ export default function Translator() {
     (code: string) => {
       setConvOverride(() => {
         if (convLangs.includes(code)) {
-          // Keep at least one language in the conversation so single-language
-          // sessions such as "Japanese only" are possible without ending up
-          // with an empty output selection.
+          // Allow narrowing all the way down to a single language (e.g. 日本語
+          // のみ for transcription / one-way translation); never below one.
           return convLangs.length > 1
             ? convLangs.filter((c) => c !== code)
             : convLangs;
@@ -161,6 +178,13 @@ export default function Translator() {
     noopSubscribe,
     platformSnapshot,
     () => null,
+  );
+  // Wide-screen (PC) layout: dock the minutes + study panels in a side column
+  // and center the start button. Phones keep the bottom-sheet panels.
+  const isDesktop = useSyncExternalStore(
+    subscribeDesktop,
+    desktopSnapshot,
+    () => false,
   );
   const [micPerm, setMicPerm] = useState<MicPermission>("unknown");
   const [optimizing, setOptimizing] = useState(false);
@@ -488,16 +512,6 @@ export default function Translator() {
       : mode === "talk"
         ? tx("Start conversation")
         : tx("Start translating");
-  const recordButton = (className = "") => (
-    <button
-      className={`record ${live ? "on" : ""}${className ? ` ${className}` : ""}`}
-      onClick={mode === "talk" ? onConvToggle : onLiveToggle}
-      disabled={connecting}
-    >
-      <span className="record-icon" />
-      {startLabel}
-    </button>
-  );
 
   return (
     <div className={`app${flipped ? " flipped" : ""}`}>
@@ -509,11 +523,11 @@ export default function Translator() {
           <span className="brand-name">
             {optimizing
               ? `✨ ${tx("Optimizing the latest conversation…")}`
-              : APP_NAME}
+              : "AI Realtime Translate"}
           </span>
         </div>
         <div className="topbar-right">
-          <ShareMenu title={`${APP_NAME} — real-time multilingual translation`} />
+          <ShareMenu title="AI Realtime Translate — real-time multilingual translation" />
           <LanguageSwitcher />
           <div className="seg">
             <button
@@ -532,159 +546,195 @@ export default function Translator() {
         </div>
       </header>
 
-      {platform?.inApp && (
-        <div className="banner warn" role="alert">
-          ⚠️{" "}
-          {tx(
-            "The microphone isn’t available in {app}’s in-app browser. Open this page in Safari or Chrome from the menu at the top right.",
-          ).replace("{app}", platform.inApp)}
+      <div className="workspace">
+        <div className="main-col">
+          {platform?.inApp && (
+            <div className="banner warn" role="alert">
+              ⚠️{" "}
+              {tx(
+                "The microphone isn’t available in {app}’s in-app browser. Open this page in Safari or Chrome from the menu at the top right.",
+              ).replace("{app}", platform.inApp)}
+            </div>
+          )}
+
+          {(t.error || (micBlocked && t.status !== "live")) && (
+            <MicHelp
+              platform={platform}
+              isMicProblem={micBlocked}
+              message={t.error}
+              onRetry={retry}
+            />
+          )}
+
+          {mode === "talk" ? (
+            <LangChips
+              selected={convLangs}
+              onToggle={toggleConvLang}
+              disabled={live || connecting}
+              open={langOpen}
+              onToggleOpen={() => setLangOpen((v) => !v)}
+            />
+          ) : (
+            <LiveTargetBar value={targetLang} onChange={setTargetLang} />
+          )}
+
+          <main className="transcript" ref={scrollRef}>
+            {mode === "talk" ? (
+              <ChatTranscript
+                segments={t.segments}
+                convLangs={convLangs}
+                partialSource={t.partialSource}
+                partialTargets={t.partialTargets}
+                speech={speech}
+                showReading={showReading}
+                speakers={diar.speakers}
+              />
+            ) : (
+              <LiveTranscript
+                segments={t.segments}
+                partialSource={t.partialSource}
+                partialTargets={t.partialTargets}
+                live={live}
+                speech={speech}
+                showReading={showReading}
+                speakers={diar.speakers}
+              />
+            )}
+          </main>
+
+          <footer className="controls">
+            <div className="options">
+              {mode === "live" && (
+                <button
+                  className={`audio-toggle ${t.audioOn ? "on" : ""}`}
+                  onClick={() => t.setAudioOn(!t.audioOn)}
+                  aria-pressed={t.audioOn}
+                >
+                  <span className="audio-ico">{t.audioOn ? "🔊" : "🔇"}</span>
+                  {tx("Audio output")} {t.audioOn ? "ON" : "OFF"}
+                </button>
+              )}
+              <button
+                className={`audio-toggle ${showReading ? "on" : ""}`}
+                onClick={() => setShowReading((v) => !v)}
+                aria-pressed={showReading}
+                title={tx("Show pronunciation (romaji, pinyin, IPA, etc.)")}
+              >
+                <span className="audio-ico">あ</span>
+                {tx("Pronunciation")} {showReading ? "ON" : "OFF"}
+              </button>
+              {/* On desktop the 学習 / 議事録 panels live in the side column, so
+                  their footer buttons only appear on phones. */}
+              {!isDesktop && (
+                <button
+                  className="audio-toggle study-open"
+                  onClick={() => setStudyOpen(true)}
+                  title={tx("Learn words and grammar from this conversation")}
+                >
+                  <span className="audio-ico">📚</span>
+                  {tx("Study")}
+                  {study.savedVocab.length > 0 && (
+                    <span className="study-count">{study.savedVocab.length}</span>
+                  )}
+                </button>
+              )}
+              {!isDesktop && (
+                <button
+                  className="audio-toggle log-open"
+                  onClick={() => setLogOpen(true)}
+                  title={tx("View minutes and conversation logs")}
+                >
+                  <span className="audio-ico">📝</span>
+                  {tx("Minutes")}
+                  {convos.conversations.length > 0 && (
+                    <span className="study-count">
+                      {convos.conversations.length}
+                    </span>
+                  )}
+                </button>
+              )}
+              <button
+                className="audio-toggle mypage-open"
+                onClick={() => setMyPageOpen(true)}
+                title={tx("See your language levels")}
+              >
+                <span className="audio-ico">🧑‍🎓</span>
+                {tx("My Page")}
+              </button>
+              <button
+                className={`audio-toggle flip ${flipped ? "on" : ""}`}
+                onClick={() => setFlipped((v) => !v)}
+                aria-pressed={flipped}
+                title={tx("Show to the other person (flip the screen)")}
+              >
+                <span className="audio-ico">🔄</span>
+                {tx("Face them")}
+              </button>
+              {t.segments.length > 0 && (
+                <button className="ghost" onClick={clearHistory}>
+                  {tx("Clear history")}
+                </button>
+              )}
+              {live && (
+                <button className="ghost danger" onClick={t.stop}>
+                  {tx("End")}
+                </button>
+              )}
+            </div>
+
+            <div className="live-controls">
+              <button
+                className={`record ${live ? "on" : ""}`}
+                onClick={mode === "talk" ? onConvToggle : onLiveToggle}
+                disabled={connecting}
+              >
+                <span className="record-icon" />
+                {startLabel}
+              </button>
+            </div>
+          </footer>
         </div>
-      )}
 
-      {(t.error || (micBlocked && t.status !== "live")) && (
-        <MicHelp
-          platform={platform}
-          isMicProblem={micBlocked}
-          message={t.error}
-          onRetry={retry}
-        />
-      )}
-
-      {mode === "talk" ? (
-        <LangChips
-          selected={convLangs}
-          onToggle={toggleConvLang}
-          disabled={live || connecting}
-          open={langOpen}
-          onToggleOpen={() => setLangOpen((v) => !v)}
-        />
-      ) : (
-        <LiveTargetBar value={targetLang} onChange={setTargetLang} />
-      )}
-
-      <main className="transcript" ref={scrollRef}>
-        {mode === "talk" ? (
-          <ChatTranscript
-            segments={t.segments}
-            convLangs={convLangs}
-            partialSource={t.partialSource}
-            partialTargets={t.partialTargets}
-            speech={speech}
-            showReading={showReading}
-            speakers={diar.speakers}
-          />
-        ) : (
-          <LiveTranscript
-            segments={t.segments}
-            partialSource={t.partialSource}
-            partialTargets={t.partialTargets}
-            live={live}
-            speech={speech}
-            showReading={showReading}
-            speakers={diar.speakers}
-          />
+        {isDesktop && (
+          <aside className="desk-side">
+            <div className="desk-panels">
+              <LogPanel open onClose={noop} convos={convos} docked />
+              <StudyPanel
+                open
+                onClose={noop}
+                study={study}
+                speech={speech}
+                lines={studyLines}
+                auto={autoStudy}
+                onToggleAuto={() => setAutoStudy((v) => !v)}
+                docked
+              />
+            </div>
+          </aside>
         )}
-      </main>
-
-      <div className="center-start" aria-label={startLabel}>
-        {recordButton("record-center")}
       </div>
 
-      <footer className="controls">
-        <div className="options">
-          {mode === "live" && (
-            <button
-              className={`audio-toggle ${t.audioOn ? "on" : ""}`}
-              onClick={() => t.setAudioOn(!t.audioOn)}
-              aria-pressed={t.audioOn}
-            >
-              <span className="audio-ico">{t.audioOn ? "🔊" : "🔇"}</span>
-              {tx("Audio output")} {t.audioOn ? "ON" : "OFF"}
-            </button>
-          )}
-          <button
-            className={`audio-toggle ${showReading ? "on" : ""}`}
-            onClick={() => setShowReading((v) => !v)}
-            aria-pressed={showReading}
-            title={tx("Show pronunciation (romaji, pinyin, IPA, etc.)")}
-          >
-            <span className="audio-ico">あ</span>
-            {tx("Pronunciation")} {showReading ? "ON" : "OFF"}
-          </button>
-          <div className="insight-actions" aria-label={`${tx("Minutes")} / ${tx("Study")}`}>
-            <button
-              className="audio-toggle log-open"
-              onClick={() => setLogOpen(true)}
-              title={tx("View minutes and conversation logs")}
-            >
-              <span className="audio-ico">📝</span>
-              {tx("Minutes")}
-              {convos.conversations.length > 0 && (
-                <span className="study-count">{convos.conversations.length}</span>
-              )}
-            </button>
-            <button
-              className="audio-toggle study-open"
-              onClick={() => setStudyOpen(true)}
-              title={tx("Learn words and grammar from this conversation")}
-            >
-              <span className="audio-ico">📚</span>
-              {tx("Study")}
-              {study.savedVocab.length > 0 && (
-                <span className="study-count">{study.savedVocab.length}</span>
-              )}
-            </button>
-          </div>
-          <button
-            className="audio-toggle mypage-open"
-            onClick={() => setMyPageOpen(true)}
-            title={tx("See your language levels")}
-          >
-            <span className="audio-ico">🧑‍🎓</span>
-            {tx("My Page")}
-          </button>
-          <button
-            className={`audio-toggle flip ${flipped ? "on" : ""}`}
-            onClick={() => setFlipped((v) => !v)}
-            aria-pressed={flipped}
-            title={tx("Show to the other person (flip the screen)")}
-          >
-            <span className="audio-ico">🔄</span>
-            {tx("Face them")}
-          </button>
-          {t.segments.length > 0 && (
-            <button className="ghost" onClick={clearHistory}>
-              {tx("Clear history")}
-            </button>
-          )}
-          {live && (
-            <button className="ghost danger" onClick={t.stop}>
-              {tx("End")}
-            </button>
-          )}
-        </div>
+      {/* Phones use bottom-sheet panels; on desktop the same panels are docked
+          in the side column above, so the modal copies are skipped. */}
+      {!isDesktop && (
+        <StudyPanel
+          open={studyOpen}
+          onClose={() => setStudyOpen(false)}
+          study={study}
+          speech={speech}
+          lines={studyLines}
+          auto={autoStudy}
+          onToggleAuto={() => setAutoStudy((v) => !v)}
+        />
+      )}
 
-        <div className="live-controls">
-          {recordButton()}
-        </div>
-      </footer>
-
-      <StudyPanel
-        open={studyOpen}
-        onClose={() => setStudyOpen(false)}
-        study={study}
-        speech={speech}
-        lines={studyLines}
-        auto={autoStudy}
-        onToggleAuto={() => setAutoStudy((v) => !v)}
-      />
-
-      <LogPanel
-        open={logOpen}
-        onClose={() => setLogOpen(false)}
-        convos={convos}
-        study={study}
-      />
+      {!isDesktop && (
+        <LogPanel
+          open={logOpen}
+          onClose={() => setLogOpen(false)}
+          convos={convos}
+        />
+      )}
 
       <MyPagePanel
         open={myPageOpen}
@@ -877,15 +927,9 @@ function ChatTranscript({
   if (segments.length === 0 && !hasPartial) {
     return (
       <Empty
-        title={
-          convLangs.length === 1
-            ? tx("Single-language conversation")
-            : tx("Auto-translate across selected languages")
-        }
+        title={tx("Auto-translate into every language")}
         body={tx(
-          convLangs.length === 1
-            ? "Press “Start conversation” to listen in the language you picked. Add more languages any time to translate between them."
-            : "Press “Start conversation” and speak in any selected language. We detect the spoken language automatically and translate it into the others.",
+          "Press “Start conversation” and just speak in any of the languages you picked. We detect the spoken language automatically and translate it into all the others, shown as a chat.",
         )}
       />
     );

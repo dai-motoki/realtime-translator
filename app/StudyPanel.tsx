@@ -52,6 +52,7 @@ export function StudyPanel({
   lines,
   auto,
   onToggleAuto,
+  docked = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -60,6 +61,9 @@ export function StudyPanel({
   lines: StudyLine[];
   auto: boolean;
   onToggleAuto: () => void;
+  // When docked (desktop side column) the panel is always shown inline instead
+  // of as a bottom-sheet modal — no backdrop, no close button, no Escape.
+  docked?: boolean;
 }) {
   const tx = useT();
   const uiLang = useUiLang();
@@ -105,17 +109,17 @@ export function StudyPanel({
   // list so the body is never blank (derived, so no extra render).
   const activeTab: Tab = auto && tab === "learn" ? "vocab" : tab;
 
-  // Close on Escape for desktop use.
+  // Close on Escape for desktop use (modal only — a docked panel can't close).
   useEffect(() => {
-    if (!open) return;
+    if (!open || docked) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, docked]);
 
-  if (!open) return null;
+  if (!open && !docked) return null;
 
   const toggleReveal = (key: string) =>
     setRevealed((prev) => {
@@ -126,7 +130,11 @@ export function StudyPanel({
     });
 
   return (
-    <div className="study-overlay" role="dialog" aria-modal="true">
+    <div
+      className={`study-overlay${docked ? " docked" : ""}`}
+      role={docked ? undefined : "dialog"}
+      aria-modal={docked ? undefined : "true"}
+    >
       <div className="study-backdrop" onClick={onClose} />
       <div className="study-sheet">
         <header className="study-head">
