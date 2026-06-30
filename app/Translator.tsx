@@ -76,6 +76,7 @@ const noopSubscribe = () => () => {};
 // model can actually speak. The full 210+ language list lives in the header
 // "My Page language" switcher, not here.
 const REALTIME_LANGUAGES = LANGUAGES.filter((l) => l.realtime);
+const APP_NAME = "AI Realtime Translate";
 
 export default function Translator() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -122,8 +123,10 @@ export default function Translator() {
     (code: string) => {
       setConvOverride(() => {
         if (convLangs.includes(code)) {
-          // Keep at least two languages in the conversation.
-          return convLangs.length > 2
+          // Keep at least one language in the conversation so single-language
+          // sessions such as "Japanese only" are possible without ending up
+          // with an empty output selection.
+          return convLangs.length > 1
             ? convLangs.filter((c) => c !== code)
             : convLangs;
         }
@@ -485,6 +488,16 @@ export default function Translator() {
       : mode === "talk"
         ? tx("Start conversation")
         : tx("Start translating");
+  const recordButton = (className = "") => (
+    <button
+      className={`record ${live ? "on" : ""}${className ? ` ${className}` : ""}`}
+      onClick={mode === "talk" ? onConvToggle : onLiveToggle}
+      disabled={connecting}
+    >
+      <span className="record-icon" />
+      {startLabel}
+    </button>
+  );
 
   return (
     <div className={`app${flipped ? " flipped" : ""}`}>
@@ -496,11 +509,11 @@ export default function Translator() {
           <span className="brand-name">
             {optimizing
               ? `✨ ${tx("Optimizing the latest conversation…")}`
-              : "CalqTalk2"}
+              : APP_NAME}
           </span>
         </div>
         <div className="topbar-right">
-          <ShareMenu title="CalqTalk2 — real-time multilingual translation" />
+          <ShareMenu title={`${APP_NAME} — real-time multilingual translation`} />
           <LanguageSwitcher />
           <div className="seg">
             <button
@@ -573,6 +586,10 @@ export default function Translator() {
         )}
       </main>
 
+      <div className="center-start" aria-label={startLabel}>
+        {recordButton("record-center")}
+      </div>
+
       <footer className="controls">
         <div className="options">
           {mode === "live" && (
@@ -594,28 +611,30 @@ export default function Translator() {
             <span className="audio-ico">あ</span>
             {tx("Pronunciation")} {showReading ? "ON" : "OFF"}
           </button>
-          <button
-            className="audio-toggle study-open"
-            onClick={() => setStudyOpen(true)}
-            title={tx("Learn words and grammar from this conversation")}
-          >
-            <span className="audio-ico">📚</span>
-            {tx("Study")}
-            {study.savedVocab.length > 0 && (
-              <span className="study-count">{study.savedVocab.length}</span>
-            )}
-          </button>
-          <button
-            className="audio-toggle log-open"
-            onClick={() => setLogOpen(true)}
-            title={tx("View minutes and conversation logs")}
-          >
-            <span className="audio-ico">📝</span>
-            {tx("Minutes")}
-            {convos.conversations.length > 0 && (
-              <span className="study-count">{convos.conversations.length}</span>
-            )}
-          </button>
+          <div className="insight-actions" aria-label={`${tx("Minutes")} / ${tx("Study")}`}>
+            <button
+              className="audio-toggle log-open"
+              onClick={() => setLogOpen(true)}
+              title={tx("View minutes and conversation logs")}
+            >
+              <span className="audio-ico">📝</span>
+              {tx("Minutes")}
+              {convos.conversations.length > 0 && (
+                <span className="study-count">{convos.conversations.length}</span>
+              )}
+            </button>
+            <button
+              className="audio-toggle study-open"
+              onClick={() => setStudyOpen(true)}
+              title={tx("Learn words and grammar from this conversation")}
+            >
+              <span className="audio-ico">📚</span>
+              {tx("Study")}
+              {study.savedVocab.length > 0 && (
+                <span className="study-count">{study.savedVocab.length}</span>
+              )}
+            </button>
+          </div>
           <button
             className="audio-toggle mypage-open"
             onClick={() => setMyPageOpen(true)}
@@ -646,14 +665,7 @@ export default function Translator() {
         </div>
 
         <div className="live-controls">
-          <button
-            className={`record ${live ? "on" : ""}`}
-            onClick={mode === "talk" ? onConvToggle : onLiveToggle}
-            disabled={connecting}
-          >
-            <span className="record-icon" />
-            {startLabel}
-          </button>
+          {recordButton()}
         </div>
       </footer>
 
@@ -671,6 +683,7 @@ export default function Translator() {
         open={logOpen}
         onClose={() => setLogOpen(false)}
         convos={convos}
+        study={study}
       />
 
       <MyPagePanel
@@ -864,9 +877,15 @@ function ChatTranscript({
   if (segments.length === 0 && !hasPartial) {
     return (
       <Empty
-        title={tx("Auto-translate into every language")}
+        title={
+          convLangs.length === 1
+            ? tx("Single-language conversation")
+            : tx("Auto-translate across selected languages")
+        }
         body={tx(
-          "Press “Start conversation” and just speak in any of the languages you picked. We detect the spoken language automatically and translate it into all the others, shown as a chat.",
+          convLangs.length === 1
+            ? "Press “Start conversation” to listen in the language you picked. Add more languages any time to translate between them."
+            : "Press “Start conversation” and speak in any selected language. We detect the spoken language automatically and translate it into the others.",
         )}
       />
     );

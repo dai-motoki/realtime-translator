@@ -4,14 +4,14 @@ import "./globals.css";
 import { I18nProvider } from "@/lib/i18n";
 
 export const metadata: Metadata = {
-  title: "CalqTalk2 — real-time multilingual translation",
+  title: "AI Realtime Translate — real-time multilingual translation",
   description:
     "A voice translation app powered by OpenAI gpt-realtime-translate that turns what you say into other languages on the spot.",
-  applicationName: "CalqTalk2",
+  applicationName: "AI Realtime Translate",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "CalqTalk2",
+    title: "AI Realtime Translate",
   },
   formatDetection: { telephone: false },
 };

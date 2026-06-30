@@ -568,6 +568,10 @@ select {
   -webkit-overflow-scrolling: touch;
 }
 
+.center-start {
+  display: none;
+}
+
 .empty {
   height: 100%;
   display: flex;
@@ -1006,6 +1010,12 @@ select {
   gap: 8px 10px;
   margin-bottom: 12px;
 }
+.insight-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
 .audio-toggle {
   display: inline-flex;
   align-items: center;
@@ -1041,6 +1051,62 @@ select {
 }
 .audio-toggle:active {
   transform: scale(0.96);
+}
+
+@media (max-width: 430px) {
+  .insight-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (min-width: 900px) and (min-height: 620px) {
+  .transcript {
+    padding: 20px 24px 170px;
+  }
+
+  .empty {
+    transform: translateY(-92px);
+  }
+
+  .center-start {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: translateY(42px);
+    pointer-events: none;
+  }
+
+  .center-start .record {
+    flex: 0 0 auto;
+    min-width: min(380px, 48vw);
+    max-width: 440px;
+    padding: 20px 32px;
+    pointer-events: auto;
+  }
+
+  .controls {
+    padding: 12px 24px calc(var(--safe-bottom) + 16px);
+    background: rgba(10, 10, 15, 0.76);
+    backdrop-filter: saturate(180%) blur(18px);
+    -webkit-backdrop-filter: saturate(180%) blur(18px);
+  }
+
+  .controls .live-controls {
+    display: none;
+  }
+
+  .options {
+    justify-content: center;
+    margin-bottom: 0;
+  }
+
+  .options .ghost,
+  .options .ghost ~ .ghost {
+    margin-left: 0;
+  }
 }
 
 .subcontrols {
@@ -1781,6 +1847,12 @@ select {
 }
 
 /* ---------------- Conversation log + minutes ---------------- */
+.log-workspace {
+  display: block;
+}
+.log-study-side {
+  display: none;
+}
 .logcard {
   padding: 12px 13px;
   background: var(--bg-elev-2);
@@ -1864,6 +1936,116 @@ select {
 .minutes-ul li {
   font-size: 13px;
   line-height: 1.55;
+}
+
+@media (min-width: 900px) {
+  .log-sheet {
+    width: min(1120px, calc(100vw - 56px));
+    max-width: none;
+    height: min(88vh, 820px);
+    border-radius: 20px;
+    margin-bottom: max(18px, var(--safe-bottom));
+  }
+
+  .log-body {
+    overflow: hidden;
+  }
+
+  .log-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+    gap: 16px;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .log-main-col,
+  .log-study-side {
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .log-study-side {
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+    padding-left: 16px;
+    border-left: 1px solid var(--line);
+  }
+
+  .log-study-head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .log-study-head h3 {
+    font-size: 16px;
+    font-weight: 750;
+  }
+
+  .log-study-head span {
+    max-width: 150px;
+    text-align: right;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--fg-dim);
+  }
+
+  .log-study-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .log-study-section h4 {
+    font-size: 12px;
+    font-weight: 750;
+    color: var(--fg-dim);
+    letter-spacing: 0.2px;
+  }
+
+  .log-study-list {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .log-study-item {
+    padding: 10px 11px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+
+  .log-study-item-top {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .log-study-item strong {
+    min-width: 0;
+    font-size: 13.5px;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+
+  .log-study-item p {
+    margin-top: 5px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--fg-dim);
+    word-break: break-word;
+  }
+
+  .log-study-reading.log-study-reading {
+    color: var(--accent);
+    font-style: italic;
+  }
 }
 
 /* Open the full chat history for one saved conversation */
